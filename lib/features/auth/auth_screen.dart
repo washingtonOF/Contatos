@@ -78,6 +78,7 @@ class _AuthScreenState extends State<AuthScreen> {
           );
         } else {
           final isAdmin = claims.claims?['admin'] == true;
+          if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(builder: (_) => _SignedInScreen(isAdmin: isAdmin)),
           );

@@ -27,5 +27,7 @@ jobs:
         run: flutter pub get
       - name: Analisar codigo
         run: flutter analyze
+      - name: Testar widgets
+        run: flutter test
       - name: Compilar Web
         run: flutter build web --release

@@ -2,7 +2,7 @@ name: Validar Conecta Flutter
 
 on:
   push:
-    branches: [main, feat/auth-ui]
+    branches: [main, feat/auth-ui, feat/master-panel]
   pull_request:
     branches: [main]
   workflow_dispatch:

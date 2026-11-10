@@ -48,7 +48,7 @@ async function main() {
     const uid = args[0];
     if (!uid) throw Error('Informe o UID de uma conta previamente verificada');
     const u = await auth.getUser(uid);
-    if (!u.emailVerified) throw Error('O primeiro administrador deve ter e-mail verificado');
+    if (!u.emailVerified) throw Error('Verifique a titularidade do administrador antes de conceder acesso. E-mail não verificado.');
     await auth.setCustomUserClaims(uid, { ...(u.customClaims || {}), admin: true });
     stdout.write('Permissão administrativa concedida. Faça novo login.\n');
     return;

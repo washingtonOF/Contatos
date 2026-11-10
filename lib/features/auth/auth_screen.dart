@@ -1,3 +1,4 @@
+import '../master/master_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -67,15 +68,18 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         await result.user?.reload();
         if (!mounted) return;
-        if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
+        final claims = await FirebaseAuth.instance.currentUser!.getIdTokenResult(true);
+        final managed = claims.claims?['managed'] == true;
+        if (FirebaseAuth.instance.currentUser?.emailVerified != true && !managed) {
           await FirebaseAuth.instance.signOut();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Verifique seu e-mail antes de entrar.')),
           );
         } else {
+          final isAdmin = claims.claims?['admin'] == true;
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(builder: (_) => const _SignedInScreen()),
+            MaterialPageRoute<void>(builder: (_) => _SignedInScreen(isAdmin: isAdmin)),
           );
         }
       }
@@ -191,7 +195,8 @@ class _AuthScreenState extends State<AuthScreen> {
 }
 
 class _SignedInScreen extends StatelessWidget {
-  const _SignedInScreen();
+  const _SignedInScreen({required this.isAdmin});
+  final bool isAdmin;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -203,6 +208,12 @@ class _SignedInScreen extends StatelessWidget {
         const SizedBox(height: 16),
         const Text('Você entrou no Conecta!'),
         const Text('As conversas estarão disponíveis em breve.'),
+        if (isAdmin) TextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const MasterScreen()),
+          ),
+          child: const Text('Abrir Conecta Master'),
+        ),
         const SizedBox(height: 20),
         FilledButton(
           onPressed: () async {

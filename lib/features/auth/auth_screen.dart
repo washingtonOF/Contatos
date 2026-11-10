@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 enum AuthMode { signIn, signUp, reset }
@@ -17,6 +18,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _password = TextEditingController();
   late AuthMode _mode;
   bool _obscure = true;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -37,12 +39,64 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _mode = next);
   }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    // Authentication is intentionally disabled until Firebase is configured.
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Protótipo: cadastro e login ainda não estão conectados ao Firebase.'),
-    ));
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final auth = FirebaseAuth.instance;
+      final email = _email.text.trim();
+      if (_mode == AuthMode.reset) {
+        await auth.sendPasswordResetEmail(email: email);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Se a conta existir, você receberá instruções por e-mail.')),
+        );
+      } else if (_mode == AuthMode.signUp) {
+        final result = await auth.createUserWithEmailAndPassword(
+          email: email, password: _password.text,
+        );
+        await result.user?.updateDisplayName(_name.text.trim());
+        await result.user?.sendEmailVerification();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Conta criada. Verifique seu e-mail antes de continuar.')),
+        );
+      } else {
+        final result = await auth.signInWithEmailAndPassword(
+          email: email, password: _password.text,
+        );
+        await result.user?.reload();
+        if (!mounted) return;
+        if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
+          await FirebaseAuth.instance.signOut();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Verifique seu e-mail antes de entrar.')),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const _SignedInScreen()),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = switch (e.code) {
+        'email-already-in-use' => 'Este e-mail já está cadastrado.',
+        'weak-password' => 'Escolha uma senha mais forte.',
+        'invalid-email' => 'E-mail inválido.',
+        'too-many-requests' => 'Muitas tentativas. Tente novamente mais tarde.',
+        _ => 'Não foi possível concluir. Verifique os dados e tente novamente.',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Falha na conexão. Tente novamente.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -109,10 +163,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: _submit,
+                      onPressed: _loading ? null : _submit,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(reset ? 'Recuperar acesso' : signUp ? 'Criar conta' : 'Entrar'),
+                        child: Text(_loading ? 'Aguarde...' : reset ? 'Recuperar acesso' : signUp ? 'Criar conta' : 'Entrar'),
                       ),
                     ),
                     if (!reset && !signUp)
@@ -123,7 +177,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: Text(signUp || reset ? 'Já tenho uma conta' : 'Criar uma conta'),
                     ),
                     const SizedBox(height: 24),
-                    const Text('Protótipo de interface — nenhuma credencial é enviada ou armazenada.',
+                    const Text('Autenticação via Firebase. Mensagens ainda em desenvolvimento.',
                         textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
                   ],
                 ),
@@ -134,4 +188,33 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
     );
   }
+}
+
+class _SignedInScreen extends StatelessWidget {
+  const _SignedInScreen();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Conecta')),
+    body: Center(child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.check_circle_outline, color: Color(0xFF1769E0), size: 64),
+        const SizedBox(height: 16),
+        const Text('Você entrou no Conecta!'),
+        const Text('As conversas estarão disponíveis em breve.'),
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: () async {
+            await FirebaseAuth.instance.signOut();
+            if (!context.mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+            );
+          },
+          child: const Text('Sair'),
+        ),
+      ],
+    )),
+  );
 }

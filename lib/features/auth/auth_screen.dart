@@ -1,4 +1,5 @@
 import '../master/master_screen.dart';
+import '../people/people_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -209,6 +210,12 @@ class _SignedInScreen extends StatelessWidget {
         const SizedBox(height: 16),
         const Text('Você entrou no Conecta!'),
         const Text('As conversas estarão disponíveis em breve.'),
+        TextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const PeopleScreen()),
+          ),
+          child: const Text('Pesquisar pessoas'),
+        ),
         if (isAdmin) TextButton(
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const MasterScreen()),

@@ -29,7 +29,8 @@ exports.createManagedUser = onCall(options, async (request) => {
       emailVerified: false,
       disabled: false,
     });
-    // Admin-created accounts are usable immediately; no false email verification claim.
+    await getAuth().setCustomUserClaims(user.uid, { managed: true });
+    // Access is granted through a signed managed claim, not forged email verification.
     return { uid: user.uid };
   } catch (e) {
     if (e.code === "auth/email-already-exists") {

@@ -1,0 +1,47 @@
+name: Publicar Conecta Web (teste)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: conecta-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Preparar Flutter Web
+        run: flutter create --platforms=web --project-name conecta_messenger .
+      - name: Instalar dependencias
+        run: flutter pub get
+      - name: Validar
+        run: |
+          flutter analyze
+          flutter test
+      - name: Compilar Web
+        run: flutter build web --release --base-href /Contatos/
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Enviar artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,6 +1,13 @@
+import 'features/auth/auth_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
-void main() => runApp(const ConectaApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: ConectaFirebaseOptions.currentPlatform);
+  runApp(const ConectaApp());
+}
 
 class ConectaApp extends StatelessWidget {
   const ConectaApp({super.key});
@@ -48,12 +55,12 @@ class WelcomeScreen extends StatelessWidget {
                     Text('Conversas que aproximam.', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 48),
                     FilledButton(
-                      onPressed: () => _showPreview(context),
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AuthScreen(initialMode: AuthMode.signUp))),
                       child: const SizedBox(width: double.infinity, child: Center(child: Text('Começar'))),
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton(
-                      onPressed: () => _showPreview(context),
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AuthScreen(initialMode: AuthMode.signIn))),
                       child: const SizedBox(width: double.infinity, child: Center(child: Text('Já tenho uma conta'))),
                     ),
                     const SizedBox(height: 24),
@@ -70,14 +77,4 @@ class WelcomeScreen extends StatelessWidget {
         ),
       );
 
-  void _showPreview(BuildContext context) => showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Em desenvolvimento'),
-          content: const Text('A autenticação Firebase será conectada na próxima etapa. Nenhuma conta foi criada.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
-          ],
-        ),
-      );
 }

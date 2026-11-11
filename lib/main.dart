@@ -65,7 +65,7 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     const Text(
-                      'Protótipo de interface • Sem conexão com Firebase',
+                      'Autenticação protegida pelo Firebase',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.grey),
                     ),

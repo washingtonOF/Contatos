@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'users_panel.dart';
 import 'package:flutter/material.dart';
 
 /// Read-only administrative shell. Privileged operations require server-side
@@ -112,6 +113,7 @@ class _MasterDashboardState extends State<MasterDashboard> {
   ]);
 
   Widget _section() {
+    if (_selected == 1) return const UsersPanel();
     if (_selected != 0) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(_labels[_selected], style: Theme.of(context).textTheme.headlineMedium),

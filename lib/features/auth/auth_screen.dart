@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../admin/master_dashboard.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +41,15 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _mode = next);
   }
 
+  Future<void> _syncOwnProfile(User user) async {
+    final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    await ref.set({
+      'name': user.displayName ?? _name.text.trim(),
+      'email': user.email ?? '',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _loading) return;
     setState(() => _loading = true);
@@ -58,6 +68,7 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         await result.user?.updateDisplayName(_name.text.trim());
         await result.user?.sendEmailVerification();
+        if (result.user != null) await _syncOwnProfile(result.user!);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Conta criada. Verifique seu e-mail antes de continuar.')),
@@ -75,6 +86,11 @@ class _AuthScreenState extends State<AuthScreen> {
             const SnackBar(content: Text('Verifique seu e-mail antes de entrar.')),
           );
         } else {
+          final signedIn = FirebaseAuth.instance.currentUser;
+          if (signedIn != null) {
+            try { await _syncOwnProfile(signedIn); } catch (_) { /* Login remains available if profile sync fails. */ }
+          }
+          if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(builder: (_) => const _SignedInScreen()),
           );

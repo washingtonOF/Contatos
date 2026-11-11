@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import '../admin/master_dashboard.dart';
 import 'package:flutter/material.dart';
 
 enum AuthMode { signIn, signUp, reset }
@@ -224,6 +225,14 @@ class _SignedInScreenState extends State<_SignedInScreen> {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (admin) ...[
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MasterDashboard())),
+                  icon: const Icon(Icons.admin_panel_settings_outlined),
+                  label: const Text('Abrir Central Master'),
+                ),
+                const SizedBox(height: 20),
+              ],
               const Icon(Icons.check_circle_outline, color: Color(0xFF1769E0), size: 64),
               const SizedBox(height: 16),
               Text(admin ? 'Central Master Conecta' : 'Você entrou no Conecta!'),

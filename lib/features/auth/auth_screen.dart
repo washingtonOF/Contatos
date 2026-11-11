@@ -68,7 +68,9 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         await result.user?.updateDisplayName(_name.text.trim());
         await result.user?.sendEmailVerification();
-        if (result.user != null) await _syncOwnProfile(result.user!);
+        if (result.user != null) {
+          try { await _syncOwnProfile(result.user!); } catch (_) { /* Account creation must not be reported as failed. */ }
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Conta criada. Verifique seu e-mail antes de continuar.')),

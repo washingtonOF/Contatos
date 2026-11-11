@@ -190,31 +190,63 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-class _SignedInScreen extends StatelessWidget {
+class _SignedInScreen extends StatefulWidget {
   const _SignedInScreen();
+
+  @override
+  State<_SignedInScreen> createState() => _SignedInScreenState();
+}
+
+class _SignedInScreenState extends State<_SignedInScreen> {
+  late final Future<bool> _isAdmin = _checkAdmin();
+
+  Future<bool> _checkAdmin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !user.emailVerified) return false;
+    final token = await user.getIdTokenResult(true);
+    return token.claims?['admin'] == true;
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Conecta')),
-    body: Center(child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.check_circle_outline, color: Color(0xFF1769E0), size: 64),
-        const SizedBox(height: 16),
-        const Text('Você entrou no Conecta!'),
-        const Text('As conversas estarão disponíveis em breve.'),
-        const SizedBox(height: 20),
-        FilledButton(
-          onPressed: () async {
-            await FirebaseAuth.instance.signOut();
-            if (!context.mounted) return;
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
-            );
-          },
-          child: const Text('Sair'),
-        ),
-      ],
-    )),
+    body: Center(
+      child: FutureBuilder<bool>(
+        future: _isAdmin,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const CircularProgressIndicator();
+          }
+          if (snapshot.hasError) {
+            return const Text('Não foi possível validar suas permissões. Entre novamente.');
+          }
+          final admin = snapshot.data == true;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_outline, color: Color(0xFF1769E0), size: 64),
+              const SizedBox(height: 16),
+              Text(admin ? 'Central Master Conecta' : 'Você entrou no Conecta!'),
+              const SizedBox(height: 12),
+              Text(admin
+                  ? 'Acesso administrativo reconhecido. Ferramentas de gestão em desenvolvimento.'
+                  : 'As conversas estarão disponíveis em breve.',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (!context.mounted) return;
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+                  );
+                },
+                child: const Text('Sair'),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
   );
 }

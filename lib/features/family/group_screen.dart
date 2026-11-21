@@ -161,29 +161,58 @@ class _GroupScreenState extends State<GroupScreen> {
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            FilledButton.icon(
-              onPressed:
-                  _busy ? null : () => _run(() => _create(direct: false)),
-              icon: const Icon(Icons.group_add),
-              label: const Text('Criar grupo'),
-            ),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => _run(() => _create(direct: true)),
-              icon: const Icon(Icons.chat_outlined),
-              label: const Text('Nova conversa individual'),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  onPressed:
+                      _busy ? null : () => _run(() => _create(direct: false)),
+                  icon: const Icon(Icons.group_add_outlined),
+                  label: const Text('Criar grupo'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed:
+                      _busy ? null : () => _run(() => _create(direct: true)),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Nova conversa'),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
-            TextField(
-              controller: _code,
-              enabled: !_busy,
-              decoration: const InputDecoration(
-                  labelText: 'Convite de grupo ou conversa'),
+            Card(
+              elevation: 0,
+              margin: EdgeInsets.zero,
+              color: Colors.white,
+              clipBehavior: Clip.antiAlias,
+              child: ExpansionTile(
+                leading: const Icon(Icons.mail_outline),
+                title: const Text('Tenho um convite'),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _code,
+                    enabled: !_busy,
+                    decoration:
+                        const InputDecoration(labelText: 'Código do convite'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: _busy ? null : () => _run(_apply),
+                    child: const Text('Fazer pré-cadastro'),
+                  ),
+                ],
+              ),
             ),
-            TextButton(
-              onPressed: _busy ? null : () => _run(_apply),
-              child: const Text('Fazer pré-cadastro'),
+            const SizedBox(height: 24),
+            Text(
+              'Suas conversas',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
             ),
-            const Divider(),
+            const SizedBox(height: 8),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _groups,
               builder: (context, snapshot) {
@@ -197,17 +226,33 @@ class _GroupScreenState extends State<GroupScreen> {
                   return const ListTile(
                       title: Text('Você ainda não participa de conversas.'));
                 }
-                return Column(children: [
-                  for (final group in groups)
-                    ListTile(
-                      leading: Icon(group.get('direct') == true
-                          ? Icons.chat_outlined
-                          : Icons.group),
-                      title: Text(group.get('title') as String),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _open(group),
-                    ),
-                ]);
+                final colors = Theme.of(context).colorScheme;
+                return Card(
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  color: Colors.white,
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (final group in groups)
+                        ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: colors.primaryContainer,
+                            foregroundColor: colors.onPrimaryContainer,
+                            child: Icon(group.get('direct') == true
+                                ? Icons.chat_outlined
+                                : Icons.group_outlined),
+                          ),
+                          title: Text(group.get('title') as String),
+                          subtitle: Text(group.get('direct') == true
+                              ? 'Conversa individual'
+                              : 'Grupo'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _open(group),
+                        ),
+                    ],
+                  ),
+                );
               },
             ),
           ],
@@ -255,7 +300,7 @@ class _GroupMembersState extends State<_GroupMembers> {
     });
     await Clipboard.setData(ClipboardData(
       text:
-          'Entre no Conecta Família, confirme seu celular e use este convite para $title:\n$code',
+          'Entre no Conecta Família, confirme seu e-mail e use este convite para $title:\n$code',
     ));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

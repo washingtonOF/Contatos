@@ -2,8 +2,8 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /attachments/{conversationType}/{conversationId}/{sender}/{messageId} {
-      function phoneAccount() {
-        return request.auth != null && request.auth.token.get('phone_number', '') != '';
+      function familyAccount() {
+        return request.auth != null && request.auth.token.get('email_verified', false) == true;
       }
 
       function validConversation() {
@@ -30,13 +30,42 @@ service firebase.storage {
         return message.sender == sender && message.fileSize == resource.size;
       }
 
-      allow get: if phoneAccount() && validConversation() && member() && publishedAttachment();
-      allow create: if phoneAccount() && validConversation() && member()
+      allow get: if familyAccount() && validConversation() && member() && publishedAttachment();
+      allow create: if familyAccount() && validConversation() && member()
         && sender == request.auth.uid && !messageExists()
         && request.resource.size > 0 && request.resource.size <= 26214400
         && request.resource.contentType == 'application/octet-stream';
-      allow delete: if phoneAccount() && validConversation() && sender == request.auth.uid
+      allow delete: if familyAccount() && validConversation() && sender == request.auth.uid
         && !messageExists();
+    }
+
+    match /statuses/{linkId}/{sender}/{statusId} {
+      function account() {
+        return request.auth != null && request.auth.token.get('email_verified', false) == true;
+      }
+
+      function member() {
+        let link = firestore.get(/databases/(default)/documents/familyLinks/$(linkId)).data;
+        return request.auth.uid in link.members && !('revokedAt' in link);
+      }
+
+      function statusPath() {
+        return /databases/(default)/documents/familyLinks/$(linkId)/statuses/$(statusId);
+      }
+
+      function visible() {
+        let status = firestore.get(statusPath()).data;
+        return status.sender == sender && status.mediaType == resource.contentType
+          && status.size == resource.size
+          && request.time < status.createdAt + duration.value(24, 'h');
+      }
+
+      allow get: if account() && member() && visible();
+      allow create: if account() && member() && sender == request.auth.uid
+        && !firestore.exists(statusPath())
+        && request.resource.size > 0 && request.resource.size <= 26214400
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
+      allow delete: if account() && sender == request.auth.uid && !firestore.exists(statusPath());
     }
   }
 }

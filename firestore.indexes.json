@@ -1,6 +1,7 @@
 {
   "indexes": [],
   "fieldOverrides": [
+    { "collectionGroup": "familyProfiles", "fieldPath": "photo", "indexes": [] },
     { "collectionGroup": "messages", "fieldPath": "file", "indexes": [] }
   ]
 }

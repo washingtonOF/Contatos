@@ -1,16 +1,27 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'family_chat.dart';
+import 'family_header.dart';
+import 'family_presence.dart';
+import 'family_profile_editor.dart';
+import 'family_status_screen.dart';
 import 'group_screen.dart';
 import 'invite_code.dart';
 
 class FamilyScreen extends StatefulWidget {
-  const FamilyScreen({super.key, required this.user});
+  const FamilyScreen({super.key, required this.user, required this.profile});
 
   final User user;
+  final Map<String, dynamic> profile;
+
+  String get name => profile['name'] as String;
+  String get phone => profile['phone'] as String;
+  Blob? get photo => profile['photo'] as Blob?;
 
   @override
   State<FamilyScreen> createState() => _FamilyScreenState();
@@ -23,13 +34,87 @@ class _FamilyScreenState extends State<FamilyScreen> {
   late final _links = _db
       .collection('familyLinks')
       .where('members', arrayContains: widget.user.uid)
-      .snapshots();
+      .snapshots()
+      .asBroadcastStream(onCancel: (subscription) => subscription.cancel());
+  late final FamilyPresence _presence;
+  late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
+      _linkSubscription;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _activeLinks = [];
+  final _profileUpdates = <String, (String, String)>{};
 
   bool _busy = false;
   String? _invite;
 
   @override
+  void initState() {
+    super.initState();
+    _presence = FamilyPresence(widget.user.uid, _db);
+    _linkSubscription = _links.listen((snapshot) {
+      _activeLinks = snapshot.docs
+          .where((link) => !link.data().containsKey('revokedAt'))
+          .toList();
+      _presence
+          .updateLinks(_activeLinks.map((link) => link.reference).toList());
+      _syncContactProfile();
+    }, onError: (Object _) => _presence.updateLinks([]));
+  }
+
+  @override
+  void didUpdateWidget(covariant FamilyScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.name != widget.name || oldWidget.phone != widget.phone) {
+      _syncContactProfile();
+    }
+  }
+
+  void _syncContactProfile() {
+    for (final link in _activeLinks) {
+      final data = link.data();
+      final owner = (data['members'] as List).first == widget.user.uid;
+      final name = owner ? 'responsibleName' : 'memberName';
+      final phone = owner ? 'responsiblePhone' : 'memberPhone';
+      final fields = (widget.name, widget.phone);
+      if ((data[name] != widget.name || data[phone] != widget.phone) &&
+          _profileUpdates[link.id] != fields) {
+        _profileUpdates[link.id] = fields;
+        unawaited(_updateContactProfile(link.reference, {
+          name: widget.name,
+          phone: widget.phone,
+        }));
+      }
+    }
+  }
+
+  Future<void> _updateContactProfile(
+    DocumentReference<Map<String, dynamic>> link,
+    Map<String, String> changes,
+  ) async {
+    try {
+      await link.update(changes);
+    } on FirebaseException {
+      // A linked member can revoke the link before the profile reaches it.
+    }
+  }
+
+  Future<void> _signOut() async {
+    _presence.clear();
+    await FirebaseAuth.instance.signOut();
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FamilyProfileEditor(
+        user: widget.user,
+        profile: widget.profile,
+        online: _presence.online,
+      ),
+    ));
+  }
+
+  @override
   void dispose() {
+    unawaited(_linkSubscription.cancel());
+    _presence.dispose();
     _inviteInput.dispose();
     _search.dispose();
     super.dispose();
@@ -55,7 +140,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
     final code = newInviteCode();
     await _db.collection('familyInvites').doc(code).set({
       'owner': widget.user.uid,
-      'phone': widget.user.phoneNumber,
+      'phone': widget.phone,
+      'name': widget.name,
       'createdAt': FieldValue.serverTimestamp(),
     });
     if (mounted) setState(() => _invite = code);
@@ -77,12 +163,15 @@ class _FamilyScreenState extends State<FamilyScreen> {
       _notice('Use um convite criado por outra conta.');
       return;
     }
+    final responsibleName = data?['name'] as String? ?? phone;
+    final profileShared =
+        widget.phone.isEmpty ? 'seu nome' : 'seu nome e celular';
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Vincular à família?'),
         content: Text(
-          'O responsável $phone verá seu número no painel familiar. '
+          '$responsibleName verá $profileShared no painel familiar. '
           'Você poderá desfazer o vínculo a qualquer momento.',
         ),
         actions: [
@@ -103,7 +192,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
     batch.set(_db.collection('familyLinks').doc(code), {
       'members': [owner, widget.user.uid],
       'responsiblePhone': phone,
-      'memberPhone': widget.user.phoneNumber,
+      'memberPhone': widget.phone,
+      'responsibleName': responsibleName,
+      'memberName': widget.name,
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.delete(invitation);
@@ -136,49 +227,58 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Minha família'),
-          actions: [
-            IconButton(
-              tooltip: 'Sair',
+  Widget _overview(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FamilyHeader(
+            icon: Icons.groups_outlined,
+            title: 'Olá, ${widget.name}',
+            description: 'Abra suas conversas ou vincule alguém da família.',
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.forum_outlined),
+            label: const Text('Grupos e conversas'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => GroupScreen(user: widget.user),
+            )),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.auto_stories_outlined),
+            label: const Text('Status de foto e vídeo'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) =>
+                  FamilyStatusScreen(uid: widget.user.uid, links: _activeLinks),
+            )),
+          ),
+        ],
+      );
+
+  Widget _invites(BuildContext context) => Card(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          leading: const Icon(Icons.person_add_alt_1_outlined),
+          title: const Text('Vincular familiar'),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton(
               onPressed: _busy
                   ? null
                   : () => _run(
-                        FirebaseAuth.instance.signOut,
-                        'Não foi possível sair.',
+                        _createInvite,
+                        'Não foi possível criar o convite.',
                       ),
-              icon: const Icon(Icons.logout),
-            ),
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            FilledButton.icon(
-              icon: const Icon(Icons.forum_outlined),
-              label: const Text('Grupos e conversas'),
-              onPressed: () =>
-                  Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => GroupScreen(user: widget.user),
-              )),
-            ),
-            const SizedBox(height: 16),
-            Text('Sua conta: ${widget.user.phoneNumber}'),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () =>
-                      _run(_createInvite, 'Não foi possível criar o convite.'),
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('Gerar convite de responsável'),
+              child: const Text('Gerar convite de responsável'),
             ),
             if (_invite case final code?)
               ListTile(
                 title: const Text('Copiar código do convite'),
-                subtitle: const Text('Use no outro celular em até 15 minutos.'),
+                subtitle: const Text('Válido por 15 minutos'),
                 trailing: const Icon(Icons.copy),
                 onTap: () async {
                   await Clipboard.setData(ClipboardData(text: code));
@@ -191,6 +291,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
               enabled: !_busy,
               decoration: const InputDecoration(labelText: 'Código recebido'),
             ),
+            const SizedBox(height: 8),
             OutlinedButton(
               onPressed: _busy
                   ? null
@@ -200,14 +301,58 @@ class _FamilyScreenState extends State<FamilyScreen> {
                       ),
               child: const Text('Conferir convite'),
             ),
-            const SizedBox(height: 24),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Conecta Família'),
+          actions: [
+            IconButton(
+              tooltip: 'Meu perfil',
+              onPressed: _openProfile,
+              icon: CircleAvatar(
+                radius: 16,
+                foregroundImage: widget.photo == null
+                    ? null
+                    : MemoryImage(widget.photo!.bytes),
+                child: const Icon(Icons.person_outline, size: 18),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Sair',
+              onPressed: _busy
+                  ? null
+                  : () => _run(
+                        _signOut,
+                        'Não foi possível sair.',
+                      ),
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          children: [
+            _overview(context),
+            const SizedBox(height: 12),
+            _invites(context),
+            const SizedBox(height: 28),
+            Text(
+              'Familiares vinculados',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _search,
               onChanged: (_) => setState(() {}),
-              keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search),
-                labelText: 'Buscar na família pelo número',
+                labelText: 'Buscar por nome ou celular',
               ),
             ),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -221,7 +366,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final query = _search.text.replaceAll(RegExp(r'\D'), '');
+                final query = _search.text.trim().toLowerCase();
+                final digits = query.replaceAll(RegExp(r'\D'), '');
                 final tiles = <Widget>[];
                 for (final link in snapshot.data!.docs) {
                   final data = link.data();
@@ -231,23 +377,48 @@ class _FamilyScreenState extends State<FamilyScreen> {
                   final phone =
                       data[isResponsible ? 'memberPhone' : 'responsiblePhone']
                           as String;
-                  if (!phone.replaceAll(RegExp(r'\D'), '').contains(query))
+                  final name =
+                      data[isResponsible ? 'memberName' : 'responsibleName']
+                              as String? ??
+                          phone;
+                  if (!name.toLowerCase().contains(query) &&
+                      (digits.isEmpty ||
+                          !phone
+                              .replaceAll(RegExp(r'\D'), '')
+                              .contains(digits))) {
                     continue;
+                  }
+                  final members = List<String>.from(data['members'] as List);
+                  final otherUid =
+                      members.firstWhere((uid) => uid != widget.user.uid);
                   tiles.add(
                     ListTile(
-                      leading: const Icon(Icons.person_outline),
-                      title: Text(phone),
+                      key: ValueKey(link.id),
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primaryContainer,
+                        child: Icon(
+                          Icons.person_outline,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                      title: Text(name),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => FamilyChat(
                             link: link.reference,
                             uid: widget.user.uid,
-                            phone: phone,
+                            phone: name,
                           ),
                         ),
                       ),
-                      subtitle: Text(
-                        isResponsible ? 'Familiar vinculado' : 'Responsável',
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (phone.isNotEmpty && phone != name) Text(phone),
+                          ContactPresence(link: link.reference, uid: otherUid),
+                        ],
                       ),
                       trailing: IconButton(
                         tooltip: 'Desvincular',
@@ -271,7 +442,13 @@ class _FamilyScreenState extends State<FamilyScreen> {
                     ),
                   );
                 }
-                return Column(children: tiles);
+                return Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.only(top: 12),
+                  color: Colors.white,
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(children: tiles),
+                );
               },
             ),
           ],

@@ -23,10 +23,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    function phoneAccount() {
-      return request.auth != null
-        && request.auth.token.get('phone_number', '') is string
-        && request.auth.token.get('phone_number', '') != '';
+    function familyAccount() {
+      return signedIn() && request.auth.token.get('email_verified', false) == true;
+    }
+
+    function profile(uid) {
+      return get(/databases/$(database)/documents/familyProfiles/$(uid)).data;
+    }
+
+    function validPresence(uid) {
+      return request.resource.data.keys().hasOnly(['uid', 'until'])
+        && request.resource.data.uid == uid
+        && request.resource.data.until is timestamp
+        && request.resource.data.until > request.time
+        && request.resource.data.until <= request.time + duration.value(120, 's');
+    }
+
+    match /familyProfiles/{uid} {
+      allow get: if familyAccount() && request.auth.uid == uid;
+      allow create, update: if familyAccount() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'photo'])
+        && (!('photo' in request.resource.data) ||
+          (request.resource.data.photo is bytes && request.resource.data.photo.size() > 0
+            && request.resource.data.photo.size() <= 196608))
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 60
+        && request.resource.data.phone is string
+        && (request.resource.data.phone == '' ||
+          request.resource.data.phone.matches('^[+][1-9][0-9]{7,14}$'));
+
+      match /presence/{session} {
+        allow create, update: if familyAccount() && request.auth.uid == uid && validPresence(uid);
+        allow delete: if familyAccount() && request.auth.uid == uid;
+      }
     }
 
     function invitePath(code) {
@@ -42,13 +71,14 @@ service cloud.firestore {
     }
 
     match /familyInvites/{code} {
-      allow get: if phoneAccount() && activeInvite(resource.data);
-      allow create: if phoneAccount() && code.matches('^[a-f0-9]{40}$')
-        && request.resource.data.keys().hasOnly(['owner', 'phone', 'createdAt'])
+      allow get: if familyAccount() && activeInvite(resource.data);
+      allow create: if familyAccount() && code.matches('^[a-f0-9]{40}$')
+        && request.resource.data.keys().hasOnly(['owner', 'phone', 'name', 'createdAt'])
         && request.resource.data.owner == request.auth.uid
-        && request.resource.data.phone == request.auth.token.phone_number
+        && request.resource.data.phone == profile(request.auth.uid).phone
+        && request.resource.data.name == profile(request.auth.uid).name
         && request.resource.data.createdAt == request.time;
-      allow delete: if phoneAccount() && (
+      allow delete: if familyAccount() && (
         resource.data.owner == request.auth.uid || (
           activeInvite(resource.data) && !exists(linkPath(code))
           && getAfter(linkPath(code)).data.members == [resource.data.owner, request.auth.uid]
@@ -57,32 +87,77 @@ service cloud.firestore {
     }
 
     match /familyLinks/{code} {
-      allow read: if phoneAccount() && request.auth.uid in resource.data.members;
-      allow update: if phoneAccount() && request.auth.uid in resource.data.members
+      allow read: if familyAccount() && request.auth.uid in resource.data.members;
+      allow update: if familyAccount() && request.auth.uid in resource.data.members
         && !('revokedAt' in resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revokedAt'])
         && request.resource.data.revokedAt == request.time;
+
+      allow update: if familyAccount() && request.auth.uid in resource.data.members
+        && !('revokedAt' in resource.data) && syncContactProfile();
+
+      function syncContactProfile() {
+        let current = profile(request.auth.uid);
+        let changes = request.resource.data.diff(resource.data).affectedKeys();
+        return request.auth.uid == resource.data.members[0]
+          ? changes.hasOnly(['responsibleName', 'responsiblePhone'])
+            && request.resource.data.responsibleName == current.name
+            && request.resource.data.responsiblePhone == current.phone
+          : changes.hasOnly(['memberName', 'memberPhone'])
+            && request.resource.data.memberName == current.name
+            && request.resource.data.memberPhone == current.phone;
+      }
+
+      match /statuses/{statusId} {
+        function activeMember() {
+          let link = get(linkPath(code)).data;
+          return request.auth.uid in link.members && !('revokedAt' in link);
+        }
+        allow read: if familyAccount() && activeMember();
+        allow create: if familyAccount() && activeMember()
+          && request.resource.data.keys().hasOnly(['sender', 'mediaType', 'size', 'createdAt'])
+          && request.resource.data.sender == request.auth.uid
+          && request.resource.data.mediaType in ['image/jpeg', 'image/png', 'image/webp', 'video/mp4']
+          && request.resource.data.size is int
+          && request.resource.data.size > 0 && request.resource.data.size <= 26214400
+          && request.resource.data.createdAt == request.time;
+        allow delete: if familyAccount() && resource.data.sender == request.auth.uid;
+      }
+
+      match /presence/{session} {
+        function activeMember() {
+          let link = get(linkPath(code)).data;
+          return request.auth.uid in link.members && !('revokedAt' in link);
+        }
+        allow read: if familyAccount() && activeMember();
+        allow create: if familyAccount() && activeMember() && validPresence(request.auth.uid);
+        allow update: if familyAccount() && activeMember() && resource.data.uid == request.auth.uid
+          && validPresence(request.auth.uid);
+        allow delete: if familyAccount() && resource.data.uid == request.auth.uid;
+      }
 
       match /messages/{messageId} {
         function activeParticipant() {
           let link = get(linkPath(code)).data;
           return request.auth.uid in link.members && !('revokedAt' in link);
         }
-        allow read: if phoneAccount() && activeParticipant();
-        allow create: if phoneAccount() && activeParticipant()
+        allow read: if familyAccount() && activeParticipant();
+        allow create: if familyAccount() && activeParticipant()
           && validMessage(request.resource.data);
       }
-      allow create: if phoneAccount() && exists(invitePath(code))
+      allow create: if familyAccount() && exists(invitePath(code))
         && canAccept(code, get(invitePath(code)).data);
 
       function canAccept(code, invite) {
         let link = request.resource.data;
         return activeInvite(invite) && invite.owner != request.auth.uid
           && !existsAfter(invitePath(code))
-          && link.keys().hasOnly(['members', 'responsiblePhone', 'memberPhone', 'createdAt'])
+          && link.keys().hasOnly(['members', 'responsiblePhone', 'memberPhone', 'responsibleName', 'memberName', 'createdAt'])
           && link.members == [invite.owner, request.auth.uid]
           && link.responsiblePhone == invite.phone
-          && link.memberPhone == request.auth.token.phone_number
+          && link.responsibleName == invite.get('name', invite.phone)
+          && link.memberPhone == profile(request.auth.uid).phone
+          && link.memberName == profile(request.auth.uid).name
           && link.createdAt == request.time;
       }
     }
@@ -124,8 +199,8 @@ service cloud.firestore {
     }
 
     match /groupInvites/{code} {
-      allow get: if phoneAccount() && validGroupInvite(resource.data, resource.data.groupId);
-      allow create: if phoneAccount() && code.matches('^[a-f0-9]{40}$')
+      allow get: if familyAccount() && validGroupInvite(resource.data, resource.data.groupId);
+      allow create: if familyAccount() && code.matches('^[a-f0-9]{40}$')
         && request.resource.data.keys().hasOnly(['groupId', 'title', 'createdAt'])
         && request.resource.data.groupId is string
         && isGroupOwner(request.resource.data.groupId)
@@ -134,8 +209,8 @@ service cloud.firestore {
     }
 
     match /groups/{groupId} {
-      allow read: if phoneAccount() && request.auth.uid in resource.data.members;
-      allow create: if phoneAccount()
+      allow read: if familyAccount() && request.auth.uid in resource.data.members;
+      allow create: if familyAccount()
         && request.resource.data.keys().hasOnly(['title', 'owner', 'members', 'names', 'direct', 'createdAt'])
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.members == [request.auth.uid]
@@ -146,7 +221,7 @@ service cloud.firestore {
         && request.resource.data.direct is bool
         && request.resource.data.createdAt == request.time;
 
-      allow update: if phoneAccount() && resource.data.owner == request.auth.uid
+      allow update: if familyAccount() && resource.data.owner == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names', 'lastChange'])
         && validMembershipChange();
 
@@ -166,11 +241,11 @@ service cloud.firestore {
       }
 
       match /applications/{uid} {
-        allow read: if phoneAccount() && (request.auth.uid == uid || isGroupOwner(groupId));
-        allow create: if phoneAccount() && request.auth.uid == uid
+        allow read: if familyAccount() && (request.auth.uid == uid || isGroupOwner(groupId));
+        allow create: if familyAccount() && request.auth.uid == uid
           && !(uid in get(groupPath(groupId)).data.members)
           && validApplication(request.resource.data);
-        allow delete: if phoneAccount() && isGroupOwner(groupId)
+        allow delete: if familyAccount() && isGroupOwner(groupId)
           && !(uid in getAfter(groupPath(groupId)).data.members);
 
         function validApplication(data) {
@@ -186,7 +261,7 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         function member() {
-          return phoneAccount() && request.auth.uid in get(groupPath(groupId)).data.members;
+          return familyAccount() && request.auth.uid in get(groupPath(groupId)).data.members;
         }
         allow read: if member();
         allow create: if member() && validMessage(request.resource.data);

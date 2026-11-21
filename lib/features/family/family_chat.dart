@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'call_link.dart';
 import 'invite_code.dart';
 
 class FamilyChat extends StatefulWidget {
@@ -33,17 +34,9 @@ enum _Attachment { location, file, voice, video }
 
 class _FamilyChatState extends State<FamilyChat> {
   static const _fileLimit = 25 * 1024 * 1024;
-  static final _callBase = Uri.tryParse(
-    const String.fromEnvironment('CONECTA_CALL_BASE_URL'),
-  );
-  static bool get _callsEnabled {
-    final base = _callBase;
-    return base != null &&
-        base.scheme == 'https' &&
-        base.host.isNotEmpty &&
-        base.userInfo.isEmpty &&
-        !base.hasQuery;
-  }
+  static final _calls =
+      CallLink(const String.fromEnvironment('CONECTA_CALL_BASE_URL'));
+  static bool get _callsEnabled => _calls.enabled;
 
   final _text = TextEditingController();
   bool _sending = false;
@@ -194,16 +187,11 @@ class _FamilyChatState extends State<FamilyChat> {
   }
 
   Future<void> _joinCall(String room, bool video) async {
-    if (!_callsEnabled) {
-      _notice('O serviço de chamadas ainda precisa ser configurado.');
+    final uri = _calls.forRoom(room, video: video);
+    if (uri == null) {
+      _notice('Convite de chamada indisponível.');
       return;
     }
-    final base = _callBase!;
-    final segments = base.pathSegments.where((segment) => segment.isNotEmpty);
-    final uri = base.replace(
-      pathSegments: [...segments, room],
-      fragment: video ? '' : 'config.startWithVideoMuted=true',
-    );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _notice('Não foi possível abrir a chamada.');
     }
@@ -276,7 +264,35 @@ class _FamilyChatState extends State<FamilyChat> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.phone), actions: widget.actions),
+        appBar: AppBar(
+          title:
+              Text(widget.phone, maxLines: 1, overflow: TextOverflow.ellipsis),
+          actions: [
+            if (_callsEnabled && !widget.group) ...[
+              IconButton(
+                tooltip: 'Chamada de voz',
+                icon: const Icon(Icons.call_outlined),
+                onPressed: _sending
+                    ? null
+                    : () => _run(
+                          () => _startCall(false),
+                          'Não foi possível iniciar a chamada.',
+                        ),
+              ),
+              IconButton(
+                tooltip: 'Chamada de vídeo',
+                icon: const Icon(Icons.videocam_outlined),
+                onPressed: _sending
+                    ? null
+                    : () => _run(
+                          () => _startCall(true),
+                          'Não foi possível iniciar a chamada.',
+                        ),
+              ),
+            ],
+            ...widget.actions,
+          ],
+        ),
         body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _link,
           builder: (context, link) {
@@ -309,8 +325,21 @@ class _FamilyChatState extends State<FamilyChat> {
                       }
                       final messages = snapshot.data!.docs;
                       if (messages.isEmpty) {
-                        return const Center(
-                          child: Text('Comece a conversa com uma mensagem.'),
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 26,
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
+                                child: const Icon(Icons.chat_bubble_outline),
+                              ),
+                              const SizedBox(height: 14),
+                              const Text('Comece a conversa com uma mensagem.'),
+                            ],
+                          ),
                         );
                       }
                       return ListView.builder(
@@ -322,29 +351,70 @@ class _FamilyChatState extends State<FamilyChat> {
                           final names = data['names'] as Map<String, dynamic>?;
                           final mine = message['sender'] == widget.uid;
                           final colors = Theme.of(context).colorScheme;
-                          return Align(
+                          final timestamp = message['createdAt'] as Timestamp?;
+                          final time = timestamp == null
+                              ? null
+                              : TimeOfDay.fromDateTime(
+                                      timestamp.toDate().toLocal())
+                                  .format(context);
+                          return FractionallySizedBox(
                             alignment: mine
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
-                            child: Card(
-                              color: mine
-                                  ? colors.primaryContainer
-                                  : colors.surfaceContainerHighest,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
+                            widthFactor: 0.83,
+                            child: Align(
+                              alignment: mine
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding:
+                                    const EdgeInsets.fromLTRB(13, 9, 13, 7),
+                                decoration: BoxDecoration(
+                                  color: mine
+                                      ? colors.primaryContainer
+                                      : Colors.white,
+                                  border: Border.all(
+                                      color: colors.outlineVariant
+                                          .withValues(alpha: 0.65)),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(18),
+                                    topRight: const Radius.circular(18),
+                                    bottomLeft: Radius.circular(mine ? 18 : 5),
+                                    bottomRight: Radius.circular(mine ? 5 : 18),
+                                  ),
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (widget.group && !mine)
-                                      Text(
-                                        names?[message['sender']] as String? ??
-                                            'Ex-participante',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall,
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 3),
+                                        child: Text(
+                                          names?[message['sender']]
+                                                  as String? ??
+                                              'Ex-participante',
+                                          style: TextStyle(
+                                            color: colors.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
                                       ),
                                     _message(messages[index].id, message),
+                                    if (time != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(time,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color:
+                                                      colors.onSurfaceVariant,
+                                                )),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -357,18 +427,23 @@ class _FamilyChatState extends State<FamilyChat> {
                 ),
                 SafeArea(
                   top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      border: Border(
+                          top: BorderSide(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant)),
                     ),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         PopupMenuButton<_Attachment>(
                           tooltip: 'Compartilhar ou ligar',
                           enabled: !_sending,
-                          icon: const Icon(Icons.add),
+                          icon: const Icon(Icons.attach_file),
                           onSelected: _attach,
                           itemBuilder: (_) => [
                             const PopupMenuItem(
@@ -377,7 +452,7 @@ class _FamilyChatState extends State<FamilyChat> {
                             const PopupMenuItem(
                                 value: _Attachment.file,
                                 child: Text('Selecionar arquivo')),
-                            if (_callsEnabled) ...[
+                            if (_callsEnabled && widget.group) ...[
                               const PopupMenuItem(
                                   value: _Attachment.voice,
                                   child: Text('Chamada de voz')),
@@ -394,11 +469,12 @@ class _FamilyChatState extends State<FamilyChat> {
                             minLines: 1,
                             maxLines: 4,
                             maxLength: 2000,
-                            decoration:
-                                const InputDecoration(hintText: 'Mensagem'),
+                            decoration: const InputDecoration(
+                                hintText: 'Mensagem', counterText: ''),
                           ),
                         ),
-                        IconButton(
+                        const SizedBox(width: 8),
+                        IconButton.filled(
                           tooltip: 'Enviar',
                           onPressed: _sending ? null : _send,
                           icon: const Icon(Icons.send),

@@ -1,12 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import '../admin/master_dashboard.dart';
+import '../family/family_header.dart';
 import 'package:flutter/material.dart';
 
 enum AuthMode { signIn, signUp, reset }
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.initialMode = AuthMode.signIn});
+  const AuthScreen(
+      {super.key, this.initialMode = AuthMode.signIn, this.family = false});
   final AuthMode initialMode;
+  final bool family;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -50,30 +53,39 @@ class _AuthScreenState extends State<AuthScreen> {
         await auth.sendPasswordResetEmail(email: email);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Se a conta existir, você receberá instruções por e-mail.')),
+          const SnackBar(
+              content: Text(
+                  'Se a conta existir, você receberá instruções por e-mail.')),
         );
       } else if (_mode == AuthMode.signUp) {
         final result = await auth.createUserWithEmailAndPassword(
-          email: email, password: _password.text,
+          email: email,
+          password: _password.text,
         );
         await result.user?.updateDisplayName(_name.text.trim());
         await result.user?.sendEmailVerification();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Conta criada. Verifique seu e-mail antes de continuar.')),
+          const SnackBar(
+              content: Text(
+                  'Conta criada. Verifique seu e-mail antes de continuar.')),
         );
       } else {
         final result = await auth.signInWithEmailAndPassword(
-          email: email, password: _password.text,
+          email: email,
+          password: _password.text,
         );
         await result.user?.reload();
         if (!mounted) return;
         if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
-          await FirebaseAuth.instance.signOut();
+          if (!widget.family) await auth.signOut();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Verifique seu e-mail antes de entrar.')),
+            const SnackBar(
+                content: Text('Verifique seu e-mail antes de entrar.')),
           );
+        } else if (widget.family) {
+          await auth.currentUser?.getIdToken(true);
         } else {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(builder: (_) => const _SignedInScreen()),
@@ -89,7 +101,8 @@ class _AuthScreenState extends State<AuthScreen> {
         'too-many-requests' => 'Muitas tentativas. Tente novamente mais tarde.',
         _ => 'Não foi possível concluir. Verifique os dados e tente novamente.',
       };
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,9 +117,13 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     final signUp = _mode == AuthMode.signUp;
     final reset = _mode == AuthMode.reset;
-    final title = reset ? 'Recuperar senha' : signUp ? 'Criar sua conta' : 'Bem-vindo de volta';
+    final title = reset
+        ? 'Recuperar senha'
+        : signUp
+            ? 'Criar sua conta'
+            : 'Bem-vindo de volta';
     return Scaffold(
-      appBar: AppBar(title: const Text('Conecta')),
+      appBar: widget.family ? null : AppBar(title: const Text('Conecta')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -118,20 +135,53 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.forum_rounded, size: 58, color: Color(0xFF1769E0)),
-                    const SizedBox(height: 24),
-                    Text(title, textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Text(reset ? 'Informe seu e-mail para recuperar o acesso.' : 'Seu espaço para conversar e se conectar.',
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 32),
+                    if (widget.family) ...[
+                      FamilyHeader(
+                        icon: reset ? Icons.lock_reset : Icons.forum_outlined,
+                        showBrand: true,
+                        title: reset
+                            ? 'Recupere sua senha'
+                            : signUp
+                                ? 'Crie sua conta'
+                                : 'Entre na sua conta',
+                        description: reset
+                            ? 'Enviaremos um link para redefinir sua senha.'
+                            : signUp
+                                ? 'Confirme seu e-mail para acessar seu perfil familiar.'
+                                : 'Use seu e-mail e sua senha para acessar suas conversas.',
+                      ),
+                      const SizedBox(height: 24),
+                    ] else ...[
+                      const Icon(Icons.forum_rounded,
+                          size: 58, color: Color(0xFF1769E0)),
+                      const SizedBox(height: 24),
+                      Text(title,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Text(
+                          reset
+                              ? 'Informe seu e-mail para recuperar o acesso.'
+                              : 'Seu espaço para conversar e se conectar.',
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 32),
+                    ],
                     if (signUp) ...[
                       TextFormField(
                         controller: _name,
                         textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(labelText: 'Nome', prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder()),
-                        validator: (v) => (v == null || v.trim().length < 2) ? 'Informe seu nome' : null,
+                        decoration: InputDecoration(
+                            labelText: 'Nome',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            border: widget.family
+                                ? null
+                                : const OutlineInputBorder()),
+                        validator: (v) => (v == null || v.trim().length < 2)
+                            ? 'Informe seu nome'
+                            : null,
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -139,27 +189,46 @@ class _AuthScreenState extends State<AuthScreen> {
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
                       autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(labelText: 'E-mail', prefixIcon: Icon(Icons.email_outlined), border: OutlineInputBorder()),
-                      validator: (v) => v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())
-                          ? null : 'Informe um e-mail válido',
+                      decoration: InputDecoration(
+                          labelText: 'E-mail',
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          border: widget.family
+                              ? null
+                              : const OutlineInputBorder()),
+                      validator: (v) => v != null &&
+                              RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                  .hasMatch(v.trim())
+                          ? null
+                          : 'Informe um e-mail válido',
                     ),
                     if (!reset) ...[
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _password,
                         obscureText: _obscure,
-                        autofillHints: [signUp ? AutofillHints.newPassword : AutofillHints.password],
+                        autofillHints: [
+                          signUp
+                              ? AutofillHints.newPassword
+                              : AutofillHints.password
+                        ],
                         decoration: InputDecoration(
                           labelText: 'Senha',
                           prefixIcon: const Icon(Icons.lock_outline),
-                          border: const OutlineInputBorder(),
+                          border:
+                              widget.family ? null : const OutlineInputBorder(),
                           suffixIcon: IconButton(
-                            tooltip: _obscure ? 'Mostrar senha' : 'Ocultar senha',
-                            icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                            onPressed: () => setState(() => _obscure = !_obscure),
+                            tooltip:
+                                _obscure ? 'Mostrar senha' : 'Ocultar senha',
+                            icon: Icon(_obscure
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined),
+                            onPressed: () =>
+                                setState(() => _obscure = !_obscure),
                           ),
                         ),
-                        validator: (v) => v == null || v.length < 8 ? 'Use pelo menos 8 caracteres' : null,
+                        validator: (v) => v == null || v.length < 8
+                            ? 'Use pelo menos 8 caracteres'
+                            : null,
                       ),
                     ],
                     const SizedBox(height: 24),
@@ -167,19 +236,38 @@ class _AuthScreenState extends State<AuthScreen> {
                       onPressed: _loading ? null : _submit,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(_loading ? 'Aguarde...' : reset ? 'Recuperar acesso' : signUp ? 'Criar conta' : 'Entrar'),
+                        child: Text(_loading
+                            ? 'Aguarde...'
+                            : reset
+                                ? 'Recuperar acesso'
+                                : signUp
+                                    ? 'Criar conta'
+                                    : 'Entrar'),
                       ),
                     ),
                     if (!reset && !signUp)
-                      TextButton(onPressed: () => _changeMode(AuthMode.reset), child: const Text('Esqueci minha senha')),
+                      TextButton(
+                          onPressed: _loading
+                              ? null
+                              : () => _changeMode(AuthMode.reset),
+                          child: const Text('Esqueci minha senha')),
                     const SizedBox(height: 12),
                     TextButton(
-                      onPressed: () => _changeMode(signUp || reset ? AuthMode.signIn : AuthMode.signUp),
-                      child: Text(signUp || reset ? 'Já tenho uma conta' : 'Criar uma conta'),
+                      onPressed: _loading
+                          ? null
+                          : () => _changeMode(signUp || reset
+                              ? AuthMode.signIn
+                              : AuthMode.signUp),
+                      child: Text(signUp || reset
+                          ? 'Já tenho uma conta'
+                          : 'Criar uma conta'),
                     ),
                     const SizedBox(height: 24),
-                    const Text('Autenticação via Firebase. Mensagens ainda em desenvolvimento.',
-                        textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                    if (!widget.family)
+                      const Text(
+                          'Autenticação via Firebase. Mensagens ainda em desenvolvimento.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               ),

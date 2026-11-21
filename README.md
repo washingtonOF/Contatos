@@ -22,6 +22,15 @@ A versão Web oferece cadastro e login por e-mail. No Android, o fluxo familiar 
 6. Em dois aparelhos ou emuladores, entre com números de teste diferentes. Gere um convite no aparelho do responsável, cole no outro e aceite. Abra o familiar pelo painel, envie mensagens nos dois sentidos e verifique que desfazer o vínculo encerra o acesso à conversa.
 
 
+## Gerar o APK pelo GitHub Actions
+
+1. No repositório, abra **Settings → Secrets and variables → Actions → Variables**. Cadastre `CONECTA_ANDROID_API_KEY` e `CONECTA_ANDROID_APP_ID` com os valores do app Android do Firebase. Quando houver uma instância Jitsi, adicione `CONECTA_CALL_BASE_URL` com a URL HTTPS.
+2. Para manter as mesmas impressões digitais entre compilações, adicione a chave de **teste** `debug.keystore`, codificada em base64, ao secret `CONECTA_DEBUG_KEYSTORE_BASE64`. Use o alias padrão `androiddebugkey` e a senha padrão de debug `android`. Sem esse secret, o runner gera uma assinatura de teste própria.
+3. Um commit na branch `feat/conecta-familia-android` inicia o workflow **Conecta Família Android**. Em **Actions**, abra a execução e baixe **conecta-familia-apk-teste**. Após o workflow estar na branch padrão, também é possível usar **Run workflow**.
+4. Registre no Firebase o SHA-1 e o SHA-256 listados em `assinatura.txt` antes de testar o SMS. O arquivo `app-debug.apk` é para instalação de teste.
+
+Sem as duas variáveis do Firebase, o APK abre na tela de configuração. As variáveis Android são configuração de cliente e ficam incorporadas ao APK. Guarde a chave de assinatura apenas como secret.
+
 ## Executar na Web
 
 1. Instale o Flutter e execute `flutter doctor`.

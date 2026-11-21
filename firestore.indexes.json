@@ -1,0 +1,6 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "messages", "fieldPath": "file", "indexes": [] }
+  ]
+}

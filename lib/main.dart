@@ -1,27 +1,54 @@
-import 'features/auth/auth_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import 'features/auth/auth_screen.dart';
+import 'features/family/phone_access.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: ConectaFirebaseOptions.currentPlatform);
-  runApp(const ConectaApp());
+  final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  final options = ConectaFirebaseOptions.currentPlatform;
+  if (android && options == null) {
+    runApp(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Text('Configure o Firebase Android para iniciar o Conecta.'),
+          ),
+        ),
+      ),
+    );
+    return;
+  }
+  await Firebase.initializeApp(options: options);
+  if (android) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
+  }
+  runApp(
+    ConectaApp(home: android ? const PhoneAccess() : const WelcomeScreen()),
+  );
 }
 
 class ConectaApp extends StatelessWidget {
-  const ConectaApp({super.key});
+  const ConectaApp({super.key, this.home = const WelcomeScreen()});
+
+  final Widget home;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Conecta',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1769E0)),
-          useMaterial3: true,
-        ),
-        home: const WelcomeScreen(),
-      );
+    title: 'Conecta',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1769E0)),
+      useMaterial3: true,
+    ),
+    home: home,
+  );
 }
 
 class WelcomeScreen extends StatelessWidget {

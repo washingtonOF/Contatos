@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function verifiedAdmin() {
+      return signedIn() && request.auth.token.email_verified == true
+        && request.auth.token.admin == true;
+    }
+    match /users/{uid} {
+      allow get: if verifiedAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if verifiedAdmin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'updatedAt'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 120;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'email', 'updatedAt'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 120;
+      allow delete: if false;
+    }
+
+    function phoneAccount() {
+      return request.auth != null
+        && request.auth.token.get('phone_number', '') is string
+        && request.auth.token.get('phone_number', '') != '';
+    }
+
+    function invitePath(code) {
+      return /databases/$(database)/documents/familyInvites/$(code);
+    }
+
+    function linkPath(code) {
+      return /databases/$(database)/documents/familyLinks/$(code);
+    }
+
+    function activeInvite(data) {
+      return request.time < data.createdAt + duration.value(15, 'm');
+    }
+
+    match /familyInvites/{code} {
+      allow get: if phoneAccount() && activeInvite(resource.data);
+      allow create: if phoneAccount() && code.matches('^[a-f0-9]{40}$')
+        && request.resource.data.keys().hasOnly(['owner', 'phone', 'createdAt'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.phone == request.auth.token.phone_number
+        && request.resource.data.createdAt == request.time;
+      allow delete: if phoneAccount() && (
+        resource.data.owner == request.auth.uid || (
+          activeInvite(resource.data) && !exists(linkPath(code))
+          && getAfter(linkPath(code)).data.members == [resource.data.owner, request.auth.uid]
+        )
+      );
+    }
+
+    match /familyLinks/{code} {
+      allow read: if phoneAccount() && request.auth.uid in resource.data.members;
+      allow update: if phoneAccount() && request.auth.uid in resource.data.members
+        && !('revokedAt' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revokedAt'])
+        && request.resource.data.revokedAt == request.time;
+
+      match /messages/{messageId} {
+        function activeParticipant() {
+          let link = get(linkPath(code)).data;
+          return request.auth.uid in link.members && !('revokedAt' in link);
+        }
+        allow read: if phoneAccount() && activeParticipant();
+        allow create: if phoneAccount() && activeParticipant()
+          && validMessage(request.resource.data);
+      }
+      allow create: if phoneAccount() && exists(invitePath(code))
+        && canAccept(code, get(invitePath(code)).data);
+
+      function canAccept(code, invite) {
+        let link = request.resource.data;
+        return activeInvite(invite) && invite.owner != request.auth.uid
+          && !existsAfter(invitePath(code))
+          && link.keys().hasOnly(['members', 'responsiblePhone', 'memberPhone', 'createdAt'])
+          && link.members == [invite.owner, request.auth.uid]
+          && link.responsiblePhone == invite.phone
+          && link.memberPhone == request.auth.token.phone_number
+          && link.createdAt == request.time;
+      }
+    }
+
+    function validMessage(data) {
+      return data.sender == request.auth.uid && data.createdAt == request.time
+        && (
+          (data.keys().hasOnly(['sender', 'text', 'createdAt']) &&
+            data.text is string && data.text.size() > 0 && data.text.size() <= 2000)
+          || (data.keys().hasOnly(['sender', 'latitude', 'longitude', 'createdAt']) &&
+            data.latitude is number && data.latitude >= -90 && data.latitude <= 90 &&
+            data.longitude is number && data.longitude >= -180 && data.longitude <= 180)
+          || (data.keys().hasOnly(['sender', 'fileName', 'file', 'createdAt']) &&
+            data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 180 &&
+            data.file is bytes && data.file.size() > 0 && data.file.size() <= 262144)
+          || (data.keys().hasOnly(['sender', 'fileName', 'fileSize', 'createdAt']) &&
+            data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 180 &&
+            data.fileSize is int && data.fileSize > 0 && data.fileSize <= 26214400)
+          || (data.keys().hasOnly(['sender', 'room', 'video', 'createdAt']) &&
+            data.room is string && data.room.matches('^[a-f0-9]{40}$') && data.video is bool)
+        );
+    }
+
+    function groupPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId);
+    }
+
+    function applicationPath(groupId, uid) {
+      return /databases/$(database)/documents/groups/$(groupId)/applications/$(uid);
+    }
+
+    function isGroupOwner(groupId) {
+      return get(groupPath(groupId)).data.owner == request.auth.uid;
+    }
+
+    function validGroupInvite(data, groupId) {
+      return data.groupId == groupId
+        && request.time < data.createdAt + duration.value(7, 'd');
+    }
+
+    match /groupInvites/{code} {
+      allow get: if phoneAccount() && validGroupInvite(resource.data, resource.data.groupId);
+      allow create: if phoneAccount() && code.matches('^[a-f0-9]{40}$')
+        && request.resource.data.keys().hasOnly(['groupId', 'title', 'createdAt'])
+        && request.resource.data.groupId is string
+        && isGroupOwner(request.resource.data.groupId)
+        && request.resource.data.title == get(groupPath(request.resource.data.groupId)).data.title
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /groups/{groupId} {
+      allow read: if phoneAccount() && request.auth.uid in resource.data.members;
+      allow create: if phoneAccount()
+        && request.resource.data.keys().hasOnly(['title', 'owner', 'members', 'names', 'direct', 'createdAt'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.names.keys().hasOnly([request.auth.uid])
+        && request.resource.data.names[request.auth.uid] == 'Criador da conversa'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 60
+        && request.resource.data.direct is bool
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if phoneAccount() && resource.data.owner == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names', 'lastChange'])
+        && validMembershipChange();
+
+      function validMembershipChange() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let uid = after.lastChange;
+        return uid is string && uid != before.owner
+          && after.names.diff(before.names).affectedKeys().hasOnly([uid]) && (
+          (!(uid in before.members) && exists(applicationPath(groupId, uid))
+            && after.members == before.members.concat([uid])
+            && after.names[uid] == get(applicationPath(groupId, uid)).data.name
+            && after.members.size() <= (before.direct ? 2 : 50))
+          || (uid in before.members && after.members == before.members.removeAll([uid])
+            && !(uid in after.names) && !existsAfter(applicationPath(groupId, uid)))
+        );
+      }
+
+      match /applications/{uid} {
+        allow read: if phoneAccount() && (request.auth.uid == uid || isGroupOwner(groupId));
+        allow create: if phoneAccount() && request.auth.uid == uid
+          && !(uid in get(groupPath(groupId)).data.members)
+          && validApplication(request.resource.data);
+        allow delete: if phoneAccount() && isGroupOwner(groupId)
+          && !(uid in getAfter(groupPath(groupId)).data.members);
+
+        function validApplication(data) {
+          return data.keys().hasOnly(['name', 'invite', 'createdAt'])
+            && data.name is string && data.name.size() >= 2 && data.name.size() <= 60
+            && data.invite is string && data.invite.matches('^[a-f0-9]{40}$')
+            && validGroupInvite(
+              get(/databases/$(database)/documents/groupInvites/$(data.invite)).data, groupId
+            )
+            && data.createdAt == request.time;
+        }
+      }
+
+      match /messages/{messageId} {
+        function member() {
+          return phoneAccount() && request.auth.uid in get(groupPath(groupId)).data.members;
+        }
+        allow read: if member();
+        allow create: if member() && validMessage(request.resource.data);
+      }
+    }
+  }
+}

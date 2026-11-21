@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /attachments/{conversationType}/{conversationId}/{sender}/{messageId} {
+      function phoneAccount() {
+        return request.auth != null && request.auth.token.get('phone_number', '') != '';
+      }
+
+      function validConversation() {
+        return conversationType in ['familyLinks', 'groups'];
+      }
+
+      function member() {
+        let chat = firestore.get(
+          /databases/(default)/documents/$(conversationType)/$(conversationId)
+        ).data;
+        return request.auth.uid in chat.members && !('revokedAt' in chat);
+      }
+
+      function messageExists() {
+        return firestore.exists(
+          /databases/(default)/documents/$(conversationType)/$(conversationId)/messages/$(messageId)
+        );
+      }
+
+      function publishedAttachment() {
+        let message = firestore.get(
+          /databases/(default)/documents/$(conversationType)/$(conversationId)/messages/$(messageId)
+        ).data;
+        return message.sender == sender && message.fileSize == resource.size;
+      }
+
+      allow get: if phoneAccount() && validConversation() && member() && publishedAttachment();
+      allow create: if phoneAccount() && validConversation() && member()
+        && sender == request.auth.uid && !messageExists()
+        && request.resource.size > 0 && request.resource.size <= 26214400
+        && request.resource.contentType == 'application/octet-stream';
+      allow delete: if phoneAccount() && validConversation() && sender == request.auth.uid
+        && !messageExists();
+    }
+  }
+}

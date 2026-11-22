@@ -38,6 +38,11 @@ android {
     }
 }
 
+// The Jitsi SDK bundles RTSP classes through react-native-video.
+configurations.configureEach {
+    exclude(group = "androidx.media3", module = "media3-exoplayer-rtsp")
+}
+
 dependencies {
     implementation("org.jitsi.react:jitsi-meet-sdk:13.3.3")
 }

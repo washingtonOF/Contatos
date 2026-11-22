@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app_name.dart';
 
 class FamilyHeader extends StatelessWidget {
   const FamilyHeader({
@@ -21,10 +22,12 @@ class FamilyHeader extends StatelessWidget {
     final text = theme.textTheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF3FF), Colors.white, Color(0xFFFBEAF6)],
+          colors: theme.brightness == Brightness.dark
+              ? const [Color(0xFF1A3251), Color(0xFF1B2639), Color(0xFF3A2749)]
+              : const [Color(0xFFEAF3FF), Colors.white, Color(0xFFFBEAF6)],
         ),
         border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(24),
@@ -37,17 +40,23 @@ class FamilyHeader extends StatelessWidget {
             if (showBrand)
               Row(
                 children: [
-                  Image.asset(
-                    'assets/isamig/logo.png',
-                    width: 108,
-                    height: 46,
-                    fit: BoxFit.contain,
-                    semanticLabel: 'Grupo Isamig',
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Image.asset(
+                      'assets/isamig/logo.png',
+                      width: 108,
+                      height: 46,
+                      fit: BoxFit.contain,
+                      semanticLabel: 'Grupo Isamig',
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Conecta Família',
+                      appName,
                       style: text.titleMedium?.copyWith(
                         color: colors.primary,
                         fontWeight: FontWeight.w700,

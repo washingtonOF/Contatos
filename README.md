@@ -1,6 +1,6 @@
-# Conecta Messenger
+# IsaMig Mensagens
 
-Conecta é um protótipo Flutter de comunicação familiar.
+IsaMig Mensagens é um protótipo Flutter de comunicação familiar.
 
 A versão Web oferece cadastro e login por e-mail. No Android, o fluxo familiar usa login com e-mail verificado e senha, convite de uso único, busca por número entre familiares vinculados e conversas individuais e grupos com aprovação de entrada.
 
@@ -25,7 +25,7 @@ A versão Web oferece cadastro e login por e-mail. No Android, o fluxo familiar 
 
 ## Aplicar as regras ao Firebase
 
-A partir da raiz do projeto, use uma conta autorizada no Firebase CLI. Confira as regras e os índices ativos do projeto antes de publicar, especialmente se o Conecta Web já usa o mesmo banco.
+A partir da raiz do projeto, use uma conta autorizada no Firebase CLI. Confira as regras e os índices ativos do projeto antes de publicar, especialmente se o IsaMig Mensagens Web já usa o mesmo banco.
 
 ```sh
 firebase login
@@ -40,7 +40,7 @@ A etapa de regras não compila o APK. Para o primeiro teste em dois celulares, c
 
 1. No repositório, abra **Settings → Secrets and variables → Actions → Variables**. Cadastre `CONECTA_ANDROID_API_KEY` e `CONECTA_ANDROID_APP_ID` com os valores do app Android do Firebase. Quando houver uma instância Jitsi, adicione `CONECTA_CALL_BASE_URL` com a URL HTTPS.
 2. Para manter as mesmas impressões digitais entre compilações, adicione a chave de **teste** `debug.keystore`, codificada em base64, ao secret `CONECTA_DEBUG_KEYSTORE_BASE64`. Use o alias padrão `androiddebugkey` e a senha padrão de debug `android`. Sem esse secret, o runner gera uma assinatura de teste própria.
-3. Um commit na branch `feat/conecta-familia-android` inicia o workflow **Conecta Família Android**. Em **Actions**, abra a execução e baixe **conecta-familia-apk-teste**. Após o workflow estar na branch padrão, também é possível usar **Run workflow**.
+3. Um commit na branch `feat/conecta-familia-android` inicia o workflow **IsaMig Mensagens Android**. Em **Actions**, abra a execução e baixe **conecta-familia-apk-teste**. Após o workflow estar na branch padrão, também é possível usar **Run workflow**.
 4. O arquivo `app-debug.apk` é para instalação de teste. `assinatura.txt` identifica o certificado desse APK.
 
 Sem as duas variáveis do Firebase, o APK abre na tela de configuração. As variáveis Android são configuração de cliente e ficam incorporadas ao APK. Guarde a chave de assinatura apenas como secret.
@@ -57,10 +57,18 @@ Sem as duas variáveis do Firebase, o APK abre na tela de configuração. As var
 
 1. Em **Grupos e conversas**, crie um grupo (até 50 participantes) ou uma conversa individual (até dois participantes).
 2. Abra a conversa e entre em **Convites e pré-cadastros**. Copie o convite e envie à pessoa. O convite expira em sete dias.
-3. A pessoa abre o Conecta Família, confirma o e-mail e cola o convite em **Grupos e conversas**. Ela informa o nome e envia o pré-cadastro.
+3. A pessoa abre o IsaMig Mensagens, confirma o e-mail e cola o convite em **Grupos e conversas**. Ela informa o nome e envia o pré-cadastro.
 4. O criador aprova a solicitação. A conversa aparece para o novo membro, que passa a ter acesso às mensagens do grupo. O criador pode remover membros na mesma tela.
 
 Use o botão **+** em uma conversa para compartilhar pontualmente a localização do próprio aparelho. O Android pede autorização e a mensagem mostra a data e a hora do envio. No mesmo menu, é possível selecionar e enviar arquivos de até 25 MB pelo Cloud Storage. O destinatário escolhe onde salvar. Anexos antigos continuam disponíveis. O Cloud Storage requer o plano Blaze no Firebase.
+
+## Responsável familiar
+
+Após verificar o e-mail, é possível continuar sem vínculo, receber pedidos como responsável ou informar o e-mail de um responsável. A aba **Família** reúne os pedidos enviados e recebidos. O responsável indicado precisa aceitar o pedido na própria conta.
+
+Nos vínculos aceitos por e-mail, o ícone de localização ao lado do familiar abre o painel. A pessoa vinculada confirma cada envio da posição no próprio aparelho e pode removê-la. O responsável vê a última posição compartilhada por até uma hora, com data e horário. O mapa abre no Google Maps mediante toque.
+
+No mesmo painel, **Tempo de uso** permite revisar um resumo estimado dos apps mais usados no dia. O Android pede que o familiar habilite **Acesso ao uso**. A pessoa escolhe quais tempos enviar ao responsável, pode remover o resumo e o acesso expira em 24 horas.
 
 ## Perfil, presença e status
 
@@ -85,10 +93,18 @@ Crie uma conta por participante na instância. Este comando pede a senha de form
 docker compose exec prosody prosodyctl --config /config/prosody.cfg.lua adduser participante@meet.jitsi
 ```
 
-Após confirmar que a instância abre por HTTPS, inclua `--dart-define=CONECTA_CALL_BASE_URL=https://meet.seu-dominio.com` ao compilar o Android. O menu da conversa passa a oferecer chamadas de voz e vídeo. O login do Jitsi é separado do login do Conecta neste primeiro teste.
+Após confirmar que a instância abre por HTTPS, inclua `--dart-define=CONECTA_CALL_BASE_URL=https://meet.seu-dominio.com` ao compilar o Android. O menu da conversa passa a oferecer chamadas de voz e vídeo. O login do Jitsi é separado do login do IsaMig Mensagens neste primeiro teste.
 
-O Conecta cria um convite de sala na conversa e abre o Jitsi no navegador ou app compatível. O convidado toca para entrar. O modo voz começa com a câmera desligada e a permissão de câmera e microfone é pedida pelo serviço. O convite aparece como expirado no Conecta após 30 minutos. A instância do Jitsi controla a autenticação, a entrada na sala e a duração da sessão. A chegada de um convite depende de abrir a conversa, pois ainda não há toque de chamada ou notificação push.
+O IsaMig Mensagens cria um convite de sala na conversa. No Android 8.0 ou superior, o SDK do Jitsi abre a chamada em uma tela do próprio app. Na Web, o convite abre no navegador. O convidado toca para entrar. O modo voz começa com a câmera desligada, e cada participante concede as permissões de microfone e câmera no próprio aparelho. O convite aparece como expirado no IsaMig Mensagens após 30 minutos. A instância do Jitsi controla a autenticação, a entrada na sala e a duração da sessão. A chegada de um convite depende de abrir a conversa, pois ainda não há toque de chamada ou notificação push.
 
 **Segurança:** nunca envie credenciais administrativas, chaves privadas, arquivos .env ou dados reais de usuários ao repositório.
 
-O nome Conecta e o identificador do aplicativo são provisórios até análise de disponibilidade de marca.
+O nome de exibição é IsaMig Mensagens. O identificador Android permanece `com.washingtonof.conecta_messenger` para usar o mesmo cadastro do Firebase.
+
+### Limpeza de dados temporários
+
+Os novos compartilhamentos do painel e os status incluem `expiresAt`. A configuração do Firestore declara TTL para `sharedLocation`, `sharedUsage` e `statuses`. Inclua esses campos ao aplicar os índices no projeto de teste. As regras de acesso continuam usando o horário do servidor. A exclusão por TTL é assíncrona, pode levar cerca de 24 horas após o prazo de limpeza e não cobre documentos antigos sem `expiresAt`.
+
+O arquivo `storage-status-lifecycle.json` define a exclusão dos objetos sob `statuses/` após dois dias. Antes de aplicá-lo, confira a política de ciclo de vida atual do bucket e combine as regras existentes com esta regra. A atualização de ciclo de vida substitui a configuração anterior e pode alcançar objetos antigos de status. A política de exclusão reversível do bucket pode manter cópias recuperáveis por um período adicional. O prefixo `attachments/` fica fora dessa regra.
+
+Para conferir os registros antigos, use `python3 scripts/migrar-expiracao.py --project ID_DO_PROJETO` com uma conta administrativa autenticada pelo Google Cloud CLI. O comando mostra contagens por coleção. Depois de validar no projeto de teste, o modo `--apply` grava o prazo calculado a partir da data original. Com o TTL ativo, registros cujo prazo já passou ficam elegíveis para exclusão. O script preserva datas de expiração existentes e ignora alterações concorrentes, que podem ser reavaliadas em outra execução.

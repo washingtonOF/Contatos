@@ -117,7 +117,9 @@ class PresenceLabel extends StatelessWidget {
         online ? 'Online' : 'Offline',
         style: TextStyle(
           color: online
-              ? const Color(0xFF14634D)
+              ? Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFF8CE6BD)
+                  : const Color(0xFF14634D)
               : Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w600,
         ),

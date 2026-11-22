@@ -2,6 +2,9 @@
   "indexes": [],
   "fieldOverrides": [
     { "collectionGroup": "familyProfiles", "fieldPath": "photo", "indexes": [] },
-    { "collectionGroup": "messages", "fieldPath": "file", "indexes": [] }
+    { "collectionGroup": "messages", "fieldPath": "file", "indexes": [] },
+    { "collectionGroup": "sharedLocation", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "sharedUsage", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "statuses", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
   ]
 }

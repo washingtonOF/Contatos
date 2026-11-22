@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../auth/auth_screen.dart';
 import 'family_screen.dart';
 import 'family_profile_editor.dart';
+import '../../app_name.dart';
 
 class FamilyAccess extends StatefulWidget {
   const FamilyAccess({super.key});
@@ -66,7 +67,7 @@ class _FamilyProfileState extends State<_FamilyProfile> {
           }
           return Scaffold(
             appBar: AppBar(
-              title: const Text('Conecta Família'),
+              title: const Text(appName),
               actions: [
                 IconButton(
                   tooltip: 'Sair',

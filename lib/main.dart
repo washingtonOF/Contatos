@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_name.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/family/family_access.dart';
 import 'firebase_options.dart';
@@ -16,7 +17,8 @@ Future<void> main() async {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: Text('Configure o Firebase Android para iniciar o Conecta.'),
+            child:
+                Text('Configure o Firebase Android para iniciar o $appName.'),
           ),
         ),
       ),
@@ -29,10 +31,15 @@ Future<void> main() async {
       persistenceEnabled: false,
     );
   }
+  final groupInvite = Uri.base.queryParameters['grupo'];
+  final family = android ||
+      (kIsWeb &&
+          groupInvite != null &&
+          RegExp(r'^[a-f0-9]{40}$').hasMatch(groupInvite));
   runApp(
     ConectaApp(
-      home: android ? const FamilyAccess() : const WelcomeScreen(),
-      familyTheme: android,
+      home: family ? const FamilyAccess() : const WelcomeScreen(),
+      familyTheme: family,
     ),
   );
 }
@@ -49,7 +56,7 @@ class ConectaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Conecta',
+        title: appName,
         debugShowCheckedModeBanner: false,
         theme: familyTheme
             ? _familyTheme()
@@ -58,25 +65,32 @@ class ConectaApp extends StatelessWidget {
                     ColorScheme.fromSeed(seedColor: const Color(0xFF1769E0)),
                 useMaterial3: true,
               ),
+        darkTheme: familyTheme ? _familyTheme(Brightness.dark) : null,
         home: home,
       );
 }
 
-ThemeData _familyTheme() {
+ThemeData _familyTheme([Brightness brightness = Brightness.light]) {
+  final dark = brightness == Brightness.dark;
   final colors = ColorScheme.fromSeed(
+    brightness: brightness,
     seedColor: const Color(0xFF1978E8),
-    primary: const Color(0xFF071B40),
-    onPrimary: Colors.white,
-    primaryContainer: const Color(0xFFE4EFFF),
-    onPrimaryContainer: const Color(0xFF102544),
-    secondary: const Color(0xFF1978E8),
-    secondaryContainer: const Color(0xFFEAF3FF),
-    onSecondaryContainer: const Color(0xFF0C4C9C),
-    tertiary: const Color(0xFFE72C92),
-    surface: const Color(0xFFF6F9FF),
-    onSurface: const Color(0xFF102544),
-    onSurfaceVariant: const Color(0xFF53657F),
-    outlineVariant: const Color(0xFFDCE5F2),
+    primary: dark ? const Color(0xFF9ACBFF) : const Color(0xFF071B40),
+    onPrimary: dark ? const Color(0xFF071B40) : Colors.white,
+    primaryContainer: dark ? const Color(0xFF17385C) : const Color(0xFFE4EFFF),
+    onPrimaryContainer:
+        dark ? const Color(0xFFDBECFF) : const Color(0xFF102544),
+    secondary: dark ? const Color(0xFF79B9FF) : const Color(0xFF1978E8),
+    secondaryContainer:
+        dark ? const Color(0xFF21354E) : const Color(0xFFEAF3FF),
+    onSecondaryContainer:
+        dark ? const Color(0xFFCEEAFF) : const Color(0xFF0C4C9C),
+    tertiary: dark ? const Color(0xFFFF83C4) : const Color(0xFFE72C92),
+    surface: dark ? const Color(0xFF111B2B) : const Color(0xFFF6F9FF),
+    surfaceContainer: dark ? const Color(0xFF1C2A40) : Colors.white,
+    onSurface: dark ? const Color(0xFFF0F5FF) : const Color(0xFF102544),
+    onSurfaceVariant: dark ? const Color(0xFFB0C2DA) : const Color(0xFF53657F),
+    outlineVariant: dark ? const Color(0xFF354762) : const Color(0xFFDCE5F2),
   );
   final fieldBorder = OutlineInputBorder(
     borderRadius: BorderRadius.circular(16),
@@ -88,7 +102,7 @@ ThemeData _familyTheme() {
     fontFamily: 'DM Sans',
     scaffoldBackgroundColor: colors.surface,
     appBarTheme: AppBarTheme(
-      backgroundColor: Colors.white,
+      backgroundColor: colors.surfaceContainer,
       foregroundColor: colors.primary,
       titleTextStyle: TextStyle(
         color: colors.primary,
@@ -99,12 +113,22 @@ ThemeData _familyTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: colors.surfaceContainer,
       border: fieldBorder,
       enabledBorder: fieldBorder,
       focusedBorder: fieldBorder.copyWith(
         borderSide: BorderSide(color: colors.secondary, width: 2),
       ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: colors.surfaceContainer,
+      indicatorColor: colors.primaryContainer,
+      labelTextStyle: WidgetStatePropertyAll(TextStyle(
+        color: colors.onSurface,
+        fontSize: 12,
+        fontFamily: 'DM Sans',
+        fontWeight: FontWeight.w600,
+      )),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -124,35 +148,48 @@ class WelcomeScreen extends StatelessWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(28),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const CircleAvatar(
                       radius: 52,
                       backgroundColor: Color(0xFFEAF3FF),
-                      child: Icon(Icons.forum_rounded, size: 56, color: Color(0xFF1769E0)),
+                      child: Icon(Icons.forum_rounded,
+                          size: 56, color: Color(0xFF1769E0)),
                     ),
                     const SizedBox(height: 28),
                     Text(
-                      'Conecta',
-                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF1769E0),
-                          ),
+                      appName,
+                      style:
+                          Theme.of(context).textTheme.displayMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF1769E0),
+                              ),
                     ),
                     const SizedBox(height: 12),
-                    Text('Conversas que aproximam.', style: Theme.of(context).textTheme.titleMedium),
+                    Text('Conversas que aproximam.',
+                        style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 48),
                     FilledButton(
-                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AuthScreen(initialMode: AuthMode.signUp))),
-                      child: const SizedBox(width: double.infinity, child: Center(child: Text('Começar'))),
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const AuthScreen(
+                                  initialMode: AuthMode.signUp))),
+                      child: const SizedBox(
+                          width: double.infinity,
+                          child: Center(child: Text('Começar'))),
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton(
-                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AuthScreen(initialMode: AuthMode.signIn))),
-                      child: const SizedBox(width: double.infinity, child: Center(child: Text('Já tenho uma conta'))),
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const AuthScreen(
+                                  initialMode: AuthMode.signIn))),
+                      child: const SizedBox(
+                          width: double.infinity,
+                          child: Center(child: Text('Já tenho uma conta'))),
                     ),
                     const SizedBox(height: 24),
                     const Text(
@@ -167,5 +204,4 @@ class WelcomeScreen extends StatelessWidget {
           ),
         ),
       );
-
 }

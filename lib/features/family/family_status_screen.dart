@@ -13,7 +13,13 @@ const _statusLimit = 25 * 1024 * 1024;
 const _statusLifetime = Duration(hours: 24);
 
 class FamilyStatusScreen extends StatefulWidget {
-  const FamilyStatusScreen({super.key, required this.uid, required this.links});
+  const FamilyStatusScreen(
+      {super.key,
+      required this.uid,
+      required this.links,
+      this.embedded = false});
+
+  final bool embedded;
 
   final String uid;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> links;
@@ -88,6 +94,9 @@ class _FamilyStatusScreenState extends State<FamilyStatusScreen> {
           'mediaType': type,
           'size': upload.totalBytes,
           'createdAt': FieldValue.serverTimestamp(),
+          'expiresAt': Timestamp.fromDate(
+            DateTime.now().add(_statusLifetime + const Duration(minutes: 5)),
+          ),
         });
       } on FirebaseException {
         try {
@@ -107,7 +116,7 @@ class _FamilyStatusScreenState extends State<FamilyStatusScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Status')),
+        appBar: widget.embedded ? null : AppBar(title: const Text('Status')),
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -222,7 +231,7 @@ class _ContactStatusesState extends State<_ContactStatuses> {
   @override
   Widget build(BuildContext context) => Card(
         elevation: 0,
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         clipBehavior: Clip.antiAlias,
         child: ExpansionTile(
           leading: const Icon(Icons.auto_stories_outlined),

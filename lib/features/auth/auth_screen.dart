@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../admin/master_dashboard.dart';
 import '../family/family_header.dart';
 import 'package:flutter/material.dart';
+import '../../app_name.dart';
 
 enum AuthMode { signIn, signUp, reset }
 
@@ -123,7 +124,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ? 'Criar sua conta'
             : 'Bem-vindo de volta';
     return Scaffold(
-      appBar: widget.family ? null : AppBar(title: const Text('Conecta')),
+      appBar: widget.family ? null : AppBar(title: const Text(appName)),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -298,7 +299,7 @@ class _SignedInScreenState extends State<_SignedInScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Conecta')),
+    appBar: AppBar(title: const Text(appName)),
     body: Center(
       child: FutureBuilder<bool>(
         future: _isAdmin,
@@ -323,7 +324,7 @@ class _SignedInScreenState extends State<_SignedInScreen> {
               ],
               const Icon(Icons.check_circle_outline, color: Color(0xFF1769E0), size: 64),
               const SizedBox(height: 16),
-              Text(admin ? 'Central Master Conecta' : 'Você entrou no Conecta!'),
+              Text(admin ? 'Central Master · $appName' : 'Você entrou no $appName!'),
               const SizedBox(height: 12),
               Text(admin
                   ? 'Acesso administrativo reconhecido. Ferramentas de gestão em desenvolvimento.'

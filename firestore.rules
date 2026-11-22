@@ -31,6 +31,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/familyProfiles/$(uid)).data;
     }
 
+    function validCleanupDeadline(data, lifetime) {
+      return !('expiresAt' in data) || (
+        data.expiresAt is timestamp
+        && data.expiresAt >= request.time + lifetime
+        && data.expiresAt <= request.time + lifetime + duration.value(10, 'm')
+      );
+    }
+
     function validPresence(uid) {
       return request.resource.data.keys().hasOnly(['uid', 'until'])
         && request.resource.data.uid == uid
@@ -39,10 +47,45 @@ service cloud.firestore {
         && request.resource.data.until <= request.time + duration.value(120, 's');
     }
 
+    function validUsername(username) {
+      return username is string && username.matches('^[a-z0-9_]{3,24}$');
+    }
+
+    function directoryPath(username) {
+      return /databases/$(database)/documents/accountDirectory/$(username);
+    }
+
+    match /accountDirectory/{username} {
+      allow get: if familyAccount();
+      allow list: if familyAccount() && request.query.limit <= 12;
+      allow create, update: if familyAccount() && validUsername(username)
+        && (resource == null || resource.data.uid == request.auth.uid)
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'nameSearch'])
+        && request.resource.data.uid == request.auth.uid
+        && directoryMatchesProfile(username);
+      allow delete: if familyAccount() && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/familyProfiles/$(request.auth.uid))
+          .data.get('username', '') != username;
+
+      function directoryMatchesProfile(username) {
+        let owner = getAfter(/databases/$(database)/documents/familyProfiles/$(request.auth.uid)).data;
+        return owner.username == username && request.resource.data.name == owner.name
+          && request.resource.data.nameSearch == owner.name.lower();
+      }
+    }
+
     match /familyProfiles/{uid} {
       allow get: if familyAccount() && request.auth.uid == uid;
       allow create, update: if familyAccount() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'photo'])
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'photo', 'supervisor', 'username'])
+        && request.resource.data.get('supervisor', false) is bool
+        && (resource == null || !('username' in resource.data)
+          || request.resource.data.get('username', '') == resource.data.username
+          || !existsAfter(directoryPath(resource.data.username)))
+        && (!('username' in request.resource.data) ||
+          (validUsername(request.resource.data.username)
+            && getAfter(directoryPath(request.resource.data.username)).data.uid == uid
+            && getAfter(directoryPath(request.resource.data.username)).data.name == request.resource.data.name))
         && (!('photo' in request.resource.data) ||
           (request.resource.data.photo is bytes && request.resource.data.photo.size() > 0
             && request.resource.data.photo.size() <= 196608))
@@ -68,6 +111,42 @@ service cloud.firestore {
 
     function activeInvite(data) {
       return request.time < data.createdAt + duration.value(15, 'm');
+    }
+
+    function requestPath(code) {
+      return /databases/$(database)/documents/familyRequests/$(code);
+    }
+
+    function verifiedEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function requestPending(data) {
+      return request.time < data.createdAt + duration.value(7, 'd');
+    }
+
+    match /familyRequests/{code} {
+      allow read: if familyAccount() && (
+        resource.data.sender == request.auth.uid || resource.data.recipientEmail == verifiedEmail()
+      );
+      allow create: if familyAccount() && code.matches('^[a-f0-9]{40}$')
+        && validFamilyRequest();
+      allow delete: if familyAccount() && (
+        resource.data.sender == request.auth.uid || resource.data.recipientEmail == verifiedEmail()
+      );
+
+      function validFamilyRequest() {
+        let data = request.resource.data;
+        let sender = getAfter(/databases/$(database)/documents/familyProfiles/$(request.auth.uid)).data;
+        return data.keys().hasOnly(['sender', 'senderEmail', 'recipientEmail', 'name', 'createdAt'])
+          && data.sender == request.auth.uid && data.senderEmail == verifiedEmail()
+          && data.recipientEmail is string && data.recipientEmail.size() <= 254
+          && data.recipientEmail == data.recipientEmail.lower()
+          && data.recipientEmail != verifiedEmail()
+          && data.recipientEmail.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
+          && data.name == sender.name
+          && data.createdAt == request.time;
+      }
     }
 
     match /familyInvites/{code} {
@@ -108,6 +187,74 @@ service cloud.firestore {
             && request.resource.data.memberPhone == current.phone;
       }
 
+      match /sharedLocation/{locationId} {
+        function mayReadLocation(link) {
+          return link.get('confirmedByEmail', false) == true && !('revokedAt' in link)
+            && (request.auth.uid == link.members[1] ||
+              (request.auth.uid == link.members[0] &&
+                (resource == null || request.time < resource.data.createdAt + duration.value(1, 'h'))));
+        }
+
+        function mayShareLocation(link) {
+          let data = request.resource.data;
+          return link.get('confirmedByEmail', false) == true && !('revokedAt' in link)
+            && request.auth.uid == link.members[1]
+            && data.keys().hasOnly(['latitude', 'longitude', 'createdAt', 'expiresAt'])
+          && validCleanupDeadline(data, duration.value(1, 'h'))
+            && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
+            && data.longitude is number && data.longitude >= -180 && data.longitude <= 180
+            && data.createdAt == request.time;
+        }
+
+        allow get: if familyAccount() && locationId == 'latest'
+          && mayReadLocation(get(linkPath(code)).data);
+        allow create, update: if familyAccount() && locationId == 'latest'
+          && mayShareLocation(get(linkPath(code)).data);
+        allow delete: if familyAccount() && locationId == 'latest'
+          && request.auth.uid == get(linkPath(code)).data.members[1];
+      }
+
+      match /sharedUsage/{reportId} {
+        function mayReadReport(link) {
+          return link.get('confirmedByEmail', false) == true && !('revokedAt' in link)
+            && (request.auth.uid == link.members[1] ||
+              (request.auth.uid == link.members[0] &&
+                (resource == null || request.time < resource.data.createdAt + duration.value(24, 'h'))));
+        }
+
+        function validApp(apps, index) {
+          return apps.size() <= index || (
+            apps[index] is map && apps[index].keys().hasOnly(['name', 'minutes'])
+            && apps[index].name is string && apps[index].name.size() >= 1
+            && apps[index].name.size() <= 60
+            && apps[index].minutes is int && apps[index].minutes >= 1
+            && apps[index].minutes <= 1500
+          );
+        }
+
+        function mayShareReport(link) {
+          let data = request.resource.data;
+          return link.get('confirmedByEmail', false) == true && !('revokedAt' in link)
+            && request.auth.uid == link.members[1]
+            && data.keys().hasOnly(['day', 'apps', 'createdAt', 'expiresAt'])
+          && validCleanupDeadline(data, duration.value(24, 'h'))
+            && data.day is string && data.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && data.apps is list && data.apps.size() >= 1 && data.apps.size() <= 8
+            && validApp(data.apps, 0) && validApp(data.apps, 1)
+            && validApp(data.apps, 2) && validApp(data.apps, 3)
+            && validApp(data.apps, 4) && validApp(data.apps, 5)
+            && validApp(data.apps, 6) && validApp(data.apps, 7)
+            && data.createdAt == request.time;
+        }
+
+        allow get: if familyAccount() && reportId == 'latest'
+          && mayReadReport(get(linkPath(code)).data);
+        allow create, update: if familyAccount() && reportId == 'latest'
+          && mayShareReport(get(linkPath(code)).data);
+        allow delete: if familyAccount() && reportId == 'latest'
+          && request.auth.uid == get(linkPath(code)).data.members[1];
+      }
+
       match /statuses/{statusId} {
         function activeMember() {
           let link = get(linkPath(code)).data;
@@ -115,7 +262,8 @@ service cloud.firestore {
         }
         allow read: if familyAccount() && activeMember();
         allow create: if familyAccount() && activeMember()
-          && request.resource.data.keys().hasOnly(['sender', 'mediaType', 'size', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['sender', 'mediaType', 'size', 'createdAt', 'expiresAt'])
+          && validCleanupDeadline(request.resource.data, duration.value(24, 'h'))
           && request.resource.data.sender == request.auth.uid
           && request.resource.data.mediaType in ['image/jpeg', 'image/png', 'image/webp', 'video/mp4']
           && request.resource.data.size is int
@@ -144,9 +292,33 @@ service cloud.firestore {
         allow read: if familyAccount() && activeParticipant();
         allow create: if familyAccount() && activeParticipant()
           && validMessage(request.resource.data);
+        allow update: if familyAccount() && activeParticipant()
+          && resource.data.get('room', '') != ''
+          && resource.data.sender != request.auth.uid
+          && !('callResponse' in resource.data)
+          && request.time < resource.data.createdAt + duration.value(30, 'm')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['callResponse'])
+          && request.resource.data.callResponse in ['accepted', 'declined'];
       }
       allow create: if familyAccount() && exists(invitePath(code))
         && canAccept(code, get(invitePath(code)).data);
+
+      allow create: if familyAccount() && exists(requestPath(code))
+        && acceptEmailRequest(code, get(requestPath(code)).data);
+
+      function acceptEmailRequest(code, pending) {
+        let link = request.resource.data;
+        let receiver = profile(request.auth.uid);
+        return requestPending(pending) && !existsAfter(requestPath(code))
+          && pending.sender != request.auth.uid && pending.recipientEmail == verifiedEmail()
+          && receiver.get('supervisor', false) == true
+          && link.keys().hasOnly(['members', 'responsiblePhone', 'memberPhone', 'responsibleName', 'memberName', 'createdAt', 'confirmedByEmail'])
+          && link.confirmedByEmail == true
+          && link.members == [request.auth.uid, pending.sender]
+          && link.responsibleName == receiver.name && link.responsiblePhone == receiver.phone
+          && link.memberName == pending.name && link.memberPhone == ''
+          && link.createdAt == request.time;
+      }
 
       function canAccept(code, invite) {
         let link = request.resource.data;
@@ -195,15 +367,18 @@ service cloud.firestore {
 
     function validGroupInvite(data, groupId) {
       return data.groupId == groupId
-        && request.time < data.createdAt + duration.value(7, 'd');
+        && request.time < data.createdAt + duration.value(7, 'd')
+        && data.createdAt > get(groupPath(groupId)).data.get('invitesRevokedAt', timestamp.date(1970, 1, 1));
     }
 
     match /groupInvites/{code} {
       allow get: if familyAccount() && validGroupInvite(resource.data, resource.data.groupId);
       allow create: if familyAccount() && code.matches('^[a-f0-9]{40}$')
-        && request.resource.data.keys().hasOnly(['groupId', 'title', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['groupId', 'title', 'createdAt', 'direct'])
         && request.resource.data.groupId is string
         && isGroupOwner(request.resource.data.groupId)
+        && (!('direct' in request.resource.data) || request.resource.data.direct ==
+          get(groupPath(request.resource.data.groupId)).data.direct)
         && request.resource.data.title == get(groupPath(request.resource.data.groupId)).data.title
         && request.resource.data.createdAt == request.time;
     }
@@ -221,9 +396,75 @@ service cloud.firestore {
         && request.resource.data.direct is bool
         && request.resource.data.createdAt == request.time;
 
-      allow update: if familyAccount() && resource.data.owner == request.auth.uid
+      allow update: if familyAccount() && resource.data.direct == true
+        && resource.data.owner == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names', 'lastChange'])
         && validMembershipChange();
+
+      allow update: if familyAccount() && resource.data.direct == false && directGroupEntry();
+
+      allow update: if familyAccount() && resource.data.owner == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invitesRevokedAt'])
+        && request.resource.data.invitesRevokedAt == request.time;
+
+      allow update: if familyAccount() && resource.data.direct == false
+        && (request.auth.uid == request.resource.data.lastChange || request.auth.uid == resource.data.owner)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names', 'lastChange'])
+        && validGroupDeparture();
+
+      function departurePath(uid) {
+        return /databases/$(database)/documents/groups/$(groupId)/departures/$(uid);
+      }
+
+      function validGroupDeparture() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let uid = after.lastChange;
+        return uid != before.owner && uid in before.members
+          && after.members == before.members.removeAll([uid])
+          && after.names.diff(before.names).affectedKeys().hasOnly([uid])
+          && !(uid in after.names)
+          && getAfter(departurePath(uid)).data.at == request.time;
+      }
+
+      match /departures/{uid} {
+        allow create, update: if familyAccount()
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time
+          && get(groupPath(groupId)).data.direct == false
+          && (request.auth.uid == uid || isGroupOwner(groupId))
+          && uid in get(groupPath(groupId)).data.members
+          && !(uid in getAfter(groupPath(groupId)).data.members);
+      }
+
+      function directGroupEntry() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let uid = after.lastChange;
+        return uid is string && !(uid in before.members)
+          && after.diff(before).affectedKeys().hasOnly(['members', 'names', 'lastChange', 'joinInvite'])
+          && after.members == before.members.concat([uid])
+          && after.members.size() <= 50
+          && after.names.diff(before.names).affectedKeys().hasOnly([uid])
+          && after.names[uid] == profile(uid).name
+          && ((uid == request.auth.uid && canJoinWithInvite(after.joinInvite, uid))
+            || (request.auth.uid in before.members
+              && !after.diff(before).affectedKeys().hasAny(['joinInvite'])
+              && !exists(departurePath(uid))
+              && validUsername(profile(uid).get('username', ''))));
+      }
+
+      function canJoinWithInvite(code, uid) {
+        return code is string && code.matches('^[a-f0-9]{40}$')
+          && invitePermitsEntry(
+            get(/databases/$(database)/documents/groupInvites/$(code)).data, uid
+          );
+      }
+
+      function invitePermitsEntry(invite, uid) {
+        return validGroupInvite(invite, groupId)
+          && (!exists(departurePath(uid)) || invite.createdAt > get(departurePath(uid)).data.at);
+      }
 
       function validMembershipChange() {
         let before = resource.data;
@@ -241,8 +482,10 @@ service cloud.firestore {
       }
 
       match /applications/{uid} {
-        allow read: if familyAccount() && (request.auth.uid == uid || isGroupOwner(groupId));
+        allow read: if familyAccount() && (isGroupOwner(groupId) ||
+          (request.auth.uid == uid && get(groupPath(groupId)).data.direct == true));
         allow create: if familyAccount() && request.auth.uid == uid
+          && get(groupPath(groupId)).data.direct == true
           && !(uid in get(groupPath(groupId)).data.members)
           && validApplication(request.resource.data);
         allow delete: if familyAccount() && isGroupOwner(groupId)

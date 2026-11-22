@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven("https://raw.githubusercontent.com/jitsi/jitsi-maven-repository/master/releases")
+        maven("https://jitpack.io")
     }
 }
 

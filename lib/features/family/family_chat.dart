@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -34,6 +36,8 @@ enum _Attachment { location, file, voice, video }
 
 class _FamilyChatState extends State<FamilyChat> {
   static const _fileLimit = 25 * 1024 * 1024;
+  static const _callChannel =
+      MethodChannel('com.washingtonof.conecta_messenger/calls');
   static final _calls =
       CallLink(const String.fromEnvironment('CONECTA_CALL_BASE_URL'));
   static bool get _callsEnabled => _calls.enabled;
@@ -41,11 +45,18 @@ class _FamilyChatState extends State<FamilyChat> {
   final _text = TextEditingController();
   bool _sending = false;
   late final _link = widget.link.snapshots();
-  late final _messages = widget.link
-      .collection('messages')
-      .orderBy('createdAt', descending: true)
-      .limit(30)
-      .snapshots();
+  static const _historyPageSize = 30;
+  int _messageLimit = _historyPageSize;
+  late final _orderedMessages =
+      widget.link.collection('messages').orderBy('createdAt', descending: true);
+  late var _messages = _orderedMessages.limit(_messageLimit).snapshots();
+
+  void _showOlderMessages() {
+    setState(() {
+      _messageLimit += _historyPageSize;
+      _messages = _orderedMessages.limit(_messageLimit).snapshots();
+    });
+  }
 
   @override
   void dispose() {
@@ -192,8 +203,61 @@ class _FamilyChatState extends State<FamilyChat> {
       _notice('Convite de chamada indisponível.');
       return;
     }
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await _callChannel.invokeMethod<void>('join', {
+        'server': _calls.server.toString(),
+        'room': room,
+        'video': video,
+      });
+    } else if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _notice('Não foi possível abrir a chamada.');
+    }
+  }
+
+  Future<void> _joinCallInvite(String messageId) async {
+    final message = await widget.link
+        .collection('messages')
+        .doc(messageId)
+        .get(const GetOptions(source: Source.server));
+    if (!mounted) return;
+    final data = message.data();
+    final room = data?['room'];
+    if (room is! String ||
+        message.metadata.hasPendingWrites ||
+        data?['callResponse'] == 'declined') {
+      _notice('Convite de chamada indisponível.');
+      return;
+    }
+    final sent = (data?['createdAt'] as Timestamp?)?.toDate();
+    if (!CallLink.inviteIsActive(sent, DateTime.now())) {
+      _notice('Convite expirado. Inicie uma nova chamada.');
+      return;
+    }
+    await _joinCall(room, data?['video'] == true);
+  }
+
+  Future<void> _respondToCall(String messageId, {required bool accept}) async {
+    final reference = widget.link.collection('messages').doc(messageId);
+    final recorded =
+        await reference.firestore.runTransaction((transaction) async {
+      final data = (await transaction.get(reference)).data();
+      final sent = (data?['createdAt'] as Timestamp?)?.toDate();
+      if (data?['room'] is! String ||
+          data?['sender'] == widget.uid ||
+          data?['callResponse'] != null ||
+          !CallLink.inviteIsActive(sent, DateTime.now())) {
+        return false;
+      }
+      transaction.update(reference, {
+        'callResponse': accept ? 'accepted' : 'declined',
+      });
+      return true;
+    });
+    if (!mounted) return;
+    if (!recorded) {
+      _notice('Este convite já foi respondido ou expirou.');
+    } else if (accept) {
+      await _joinCallInvite(messageId);
     }
   }
 
@@ -239,24 +303,66 @@ class _FamilyChatState extends State<FamilyChat> {
         label: Text(file),
       );
     }
-    if (data['room'] case final String room) {
+    if (data['room'] is String) {
       final video = data['video'] == true;
       final sent = (data['createdAt'] as Timestamp?)?.toDate();
-      final open = sent != null &&
-          DateTime.now().difference(sent) < const Duration(minutes: 30);
-      return TextButton.icon(
-        onPressed: open && _callsEnabled && !_sending
-            ? () => _run(
-                  () => _joinCall(room, video),
-                  'Não foi possível abrir a chamada.',
-                )
-            : null,
-        icon: Icon(video ? Icons.videocam_outlined : Icons.call_outlined),
-        label: Text(!open
-            ? 'Convite de chamada expirado'
-            : video
-                ? 'Entrar na chamada de vídeo'
-                : 'Entrar na chamada de voz'),
+      final open = CallLink.inviteIsActive(sent, DateTime.now());
+      final response = data['callResponse'];
+      final incoming = !widget.group && data['sender'] != widget.uid;
+      final enabled = open && !_sending;
+      final type = video ? 'vídeo' : 'voz';
+      if (response == 'declined') return Text('Convite de $type recusado');
+      if (incoming && response == null && sent != null && !open) {
+        return Text('Chamada de $type perdida');
+      }
+      if (incoming && response == null && open) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Chamada de $type recebida'),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton(
+                  onPressed: enabled
+                      ? () => _run(
+                            () => _respondToCall(messageId, accept: false),
+                            'Não foi possível recusar o convite.',
+                          )
+                      : null,
+                  child: const Text('Recusar'),
+                ),
+                FilledButton(
+                  onPressed: enabled && _callsEnabled
+                      ? () => _run(
+                            () => _respondToCall(messageId, accept: true),
+                            'Não foi possível atender.',
+                          )
+                      : null,
+                  child: const Text('Atender'),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (response == 'accepted') const Text('Convite aceito'),
+          TextButton.icon(
+            onPressed: enabled && _callsEnabled
+                ? () => _run(
+                      () => _joinCallInvite(messageId),
+                      'Não foi possível abrir a chamada.',
+                    )
+                : null,
+            icon: Icon(video ? Icons.videocam_outlined : Icons.call_outlined),
+            label: Text(!open
+                ? 'Convite de chamada expirado'
+                : 'Entrar na chamada de $type'),
+          ),
+        ],
       );
     }
     return const Text('Mensagem indisponível.');
@@ -342,11 +448,28 @@ class _FamilyChatState extends State<FamilyChat> {
                           ),
                         );
                       }
+                      final showHistoryButton = widget.group &&
+                          (messages.length >= _messageLimit ||
+                              snapshot.connectionState !=
+                                  ConnectionState.active);
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.all(16),
-                        itemCount: messages.length,
+                        itemCount:
+                            messages.length + (showHistoryButton ? 1 : 0),
                         itemBuilder: (context, index) {
+                          if (index == messages.length) {
+                            return Center(
+                              child: snapshot.connectionState ==
+                                      ConnectionState.active
+                                  ? TextButton(
+                                      onPressed: _showOlderMessages,
+                                      child: const Text(
+                                          'Carregar mensagens antigas'),
+                                    )
+                                  : const LinearProgressIndicator(),
+                            );
+                          }
                           final message = messages[index].data();
                           final names = data['names'] as Map<String, dynamic>?;
                           final mine = message['sender'] == widget.uid;
@@ -373,7 +496,7 @@ class _FamilyChatState extends State<FamilyChat> {
                                 decoration: BoxDecoration(
                                   color: mine
                                       ? colors.primaryContainer
-                                      : Colors.white,
+                                      : colors.surfaceContainer,
                                   border: Border.all(
                                       color: colors.outlineVariant
                                           .withValues(alpha: 0.65)),

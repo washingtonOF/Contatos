@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 
 import 'family_header.dart';
 import 'family_presence.dart';
+import 'family_requests.dart';
+import '../../app_name.dart';
 
 class FamilyProfileEditor extends StatefulWidget {
   const FamilyProfileEditor({
@@ -16,15 +18,19 @@ class FamilyProfileEditor extends StatefulWidget {
     required this.user,
     this.profile,
     this.online,
+    this.embedded = false,
   });
 
   final User user;
+  final bool embedded;
   final Map<String, dynamic>? profile;
   final ValueListenable<bool>? online;
 
   @override
   State<FamilyProfileEditor> createState() => _FamilyProfileEditorState();
 }
+
+enum _FamilySetup { independent, responsible, link }
 
 class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
   final _form = GlobalKey<FormState>();
@@ -34,13 +40,20 @@ class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
   late final _phone = TextEditingController(
     text: widget.profile?['phone'] as String? ?? '',
   );
+  late final _username = TextEditingController(
+    text: widget.profile?['username'] as String? ?? '',
+  );
   late Blob? _photo = widget.profile?['photo'] as Blob?;
   bool _busy = false;
+  _FamilySetup _setup = _FamilySetup.independent;
+  final _responsibleEmail = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
+    _username.dispose();
+    _responsibleEmail.dispose();
     super.dispose();
   }
 
@@ -102,17 +115,61 @@ class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
     if (_busy || !_form.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('familyProfiles')
-          .doc(widget.user.uid)
-          .set({
-        'name': _name.text.trim(),
+      final db = FirebaseFirestore.instance;
+      final document = db.collection('familyProfiles').doc(widget.user.uid);
+      final username = _username.text.trim().toLowerCase();
+      final previous = widget.profile?['username'] as String?;
+      final directory = db.collection('accountDirectory');
+      final batch = db.batch();
+      if (previous != null && previous != username) {
+        batch.delete(directory.doc(previous));
+      }
+      final name = _name.text.trim();
+      if (username.isNotEmpty) {
+        batch.set(directory.doc(username), {
+          'uid': widget.user.uid,
+          'name': name,
+          'nameSearch': name.toLowerCase(),
+        });
+      }
+      final data = <String, Object>{
+        if (username.isNotEmpty) 'username': username,
+        'name': name,
         'phone': _number,
         if (_photo case final photo?) 'photo': photo,
-      });
-      if (mounted && widget.profile != null) Navigator.pop(context);
-    } on FirebaseException {
-      _notice('Não foi possível salvar seu perfil.');
+      };
+      if (widget.profile != null) {
+        batch.update(document, {
+          ...data,
+          if (username.isEmpty) 'username': FieldValue.delete(),
+          if (_photo == null) 'photo': FieldValue.delete(),
+        });
+      } else {
+        batch.set(document,
+            {...data, 'supervisor': _setup == _FamilySetup.responsible});
+        if (_setup == _FamilySetup.link) {
+          addFamilyRequest(
+            batch,
+            db,
+            user: widget.user,
+            email: _responsibleEmail.text.trim().toLowerCase(),
+            name: _name.text.trim(),
+          );
+        }
+      }
+      await batch.commit();
+      if (mounted && widget.profile != null) {
+        if (widget.embedded) {
+          _notice('Perfil atualizado.');
+        } else {
+          Navigator.pop(context);
+        }
+      }
+    } on FirebaseException catch (error) {
+      _notice(error.code == 'permission-denied' &&
+              _username.text.trim().isNotEmpty
+          ? 'Não foi possível usar esse @username. Confira se já está em uso.'
+          : 'Não foi possível salvar seu perfil.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -124,17 +181,19 @@ class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
     final colors = Theme.of(context).colorScheme;
     final status = widget.online;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(editing ? 'Meu perfil' : 'Conecta Família'),
-        actions: [
-          if (!editing)
-            IconButton(
-              tooltip: 'Sair',
-              onPressed: _busy ? null : FirebaseAuth.instance.signOut,
-              icon: const Icon(Icons.logout),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text(editing ? 'Meu perfil' : appName),
+              actions: [
+                if (!editing)
+                  IconButton(
+                    tooltip: 'Sair',
+                    onPressed: _busy ? null : FirebaseAuth.instance.signOut,
+                    icon: const Icon(Icons.logout),
+                  ),
+              ],
             ),
-        ],
-      ),
       body: SafeArea(
         child: Form(
           key: _form,
@@ -208,6 +267,23 @@ class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
               ),
               const SizedBox(height: 12),
               TextFormField(
+                controller: _username,
+                enabled: !_busy,
+                decoration: const InputDecoration(
+                  labelText: '@username (opcional)',
+                  helperText: 'Seu nome e @username aparecerão na pesquisa.',
+                  prefixIcon: Icon(Icons.alternate_email),
+                ),
+                validator: (value) {
+                  final username = value?.trim().toLowerCase() ?? '';
+                  return username.isEmpty ||
+                          RegExp(r'^[a-z0-9_]{3,24}$').hasMatch(username)
+                      ? null
+                      : 'Use de 3 a 24 letras sem acento, números ou _.';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
                 controller: _phone,
                 enabled: !_busy,
                 keyboardType: TextInputType.phone,
@@ -226,6 +302,50 @@ class _FamilyProfileEditorState extends State<FamilyProfileEditor> {
                 'Seu celular ajuda os familiares vinculados a encontrar você no painel.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (!editing) ...[
+                const SizedBox(height: 22),
+                DropdownButtonFormField<_FamilySetup>(
+                  initialValue: _setup,
+                  isExpanded: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Como vai usar o app?'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: _FamilySetup.independent,
+                        child: Text('Usar sem vínculo')),
+                    DropdownMenuItem(
+                        value: _FamilySetup.responsible,
+                        child: Text('Configurar como responsável')),
+                    DropdownMenuItem(
+                        value: _FamilySetup.link,
+                        child: Text('Vincular a um responsável')),
+                  ],
+                  onChanged: _busy
+                      ? null
+                      : (value) {
+                          if (value != null) setState(() => _setup = value);
+                        },
+                ),
+                if (_setup == _FamilySetup.link) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _responsibleEmail,
+                    keyboardType: TextInputType.emailAddress,
+                    enabled: !_busy,
+                    decoration: const InputDecoration(
+                        labelText: 'E-mail do responsável'),
+                    validator: (value) => validResponsibleEmail(
+                      value?.trim().toLowerCase() ?? '',
+                      widget.user,
+                    )
+                        ? null
+                        : 'Informe um e-mail válido diferente do seu.',
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'Seu nome e e-mail serão compartilhados no pedido. O vínculo começa após o aceite.'),
+                ],
+              ],
               const SizedBox(height: 22),
               FilledButton(
                 onPressed: _busy ? null : _save,

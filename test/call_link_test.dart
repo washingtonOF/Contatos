@@ -21,4 +21,20 @@ void main() {
         isNull);
     expect(calls.forRoom('../outra-sala', video: true), isNull);
   });
+
+  test('convite só funciona durante os 30 minutos após o envio', () {
+    final sent = DateTime.utc(2026, 11, 21, 15);
+    expect(CallLink.inviteIsActive(null, sent), isFalse);
+    expect(
+        CallLink.inviteIsActive(
+            sent, sent.subtract(const Duration(seconds: 1))),
+        isFalse);
+    expect(CallLink.inviteIsActive(sent, sent), isTrue);
+    expect(
+        CallLink.inviteIsActive(
+            sent, sent.add(const Duration(minutes: 29, seconds: 59))),
+        isTrue);
+    expect(CallLink.inviteIsActive(sent, sent.add(const Duration(minutes: 30))),
+        isFalse);
+  });
 }

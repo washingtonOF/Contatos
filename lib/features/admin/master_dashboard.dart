@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'users_panel.dart';
 import 'package:flutter/material.dart';
+import '../../app_name.dart';
 
 /// Read-only administrative shell. Privileged operations require server-side
 /// authorization and are intentionally not exposed by this screen.
@@ -69,7 +70,7 @@ class _MasterDashboardState extends State<MasterDashboard> {
     final wide = MediaQuery.sizeOf(context).width >= 760;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Central Master Conecta'),
+        title: const Text('Central Master · $appName'),
         actions: [
           IconButton(tooltip: 'Atualizar permissões', onPressed: _verify, icon: const Icon(Icons.refresh)),
           IconButton(
@@ -131,7 +132,7 @@ class _MasterDashboardState extends State<MasterDashboard> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Visão geral', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 8),
-      const Text('Painel administrativo do Conecta'),
+      const Text('Painel administrativo do $appName'),
       const SizedBox(height: 20),
       Card(child: Padding(padding: const EdgeInsets.all(20), child: Row(children: [
         const Icon(Icons.verified_user_outlined, color: Color(0xFF1769E0), size: 32),

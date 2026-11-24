@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../auth/auth_screen.dart';
 import 'family_screen.dart';
+import 'responsible_web_dashboard.dart';
 import 'family_profile_editor.dart';
 import '../../app_name.dart';
 
@@ -60,6 +62,16 @@ class _FamilyProfileState extends State<_FamilyProfile> {
         builder: (context, snapshot) {
           final profile = snapshot.data?.data();
           if (profile != null) {
+            if (kIsWeb) {
+              if (profile['supervisor'] != true) {
+                return const Scaffold(
+                  body: Center(
+                    child: Text('O painel web é exclusivo para responsáveis. Use o aplicativo Android para dependentes.'),
+                  ),
+                );
+              }
+              return ResponsibleWebDashboard(user: widget.user);
+            }
             return FamilyScreen(user: widget.user, profile: profile);
           }
           if (snapshot.hasData && !snapshot.hasError) {

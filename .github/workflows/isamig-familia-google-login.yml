@@ -23,10 +23,12 @@ jobs:
           DEBUG_KEYSTORE: ${{ secrets.CONECTA_DEBUG_KEYSTORE_BASE64 }}
           FIREBASE_API_KEY: ${{ vars.CONECTA_ANDROID_API_KEY }}
           FIREBASE_APP_ID: ${{ vars.CONECTA_ANDROID_APP_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
           test -n "$DEBUG_KEYSTORE" || { echo "::error::Configure CONECTA_DEBUG_KEYSTORE_BASE64 em Actions Secrets."; exit 1; }
           test -n "$FIREBASE_API_KEY" || { echo "::error::Configure CONECTA_ANDROID_API_KEY em Actions Variables."; exit 1; }
           test -n "$FIREBASE_APP_ID" || { echo "::error::Configure CONECTA_ANDROID_APP_ID em Actions Variables."; exit 1; }
+          test -n "$GOOGLE_WEB_CLIENT_ID" || { echo "::error::Configure GOOGLE_WEB_CLIENT_ID em Actions Variables."; exit 1; }
           mkdir -p "$HOME/.android"
           umask 077
           printf '%s' "$DEBUG_KEYSTORE" | base64 --decode > "$HOME/.android/debug.keystore"
@@ -43,7 +45,8 @@ jobs:
         run: |
           flutter build apk --debug \
             --dart-define=CONECTA_ANDROID_API_KEY="$FIREBASE_API_KEY" \
-            --dart-define=CONECTA_ANDROID_APP_ID="$FIREBASE_APP_ID"
+            --dart-define=CONECTA_ANDROID_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID"
       - name: Conferir assinatura do APK
         run: |
           apk="build/app/outputs/flutter-apk/app-debug.apk"

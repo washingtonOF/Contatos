@@ -54,7 +54,14 @@ class _AuthScreenState extends State<AuthScreen> {
       if (kIsWeb) {
         await auth.signInWithPopup(GoogleAuthProvider());
       } else {
-        final account = await GoogleSignIn(scopes: ['email']).signIn();
+        const googleWebClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+        if (googleWebClientId.isEmpty) {
+          throw StateError('Configure GOOGLE_WEB_CLIENT_ID para login Google no Android.');
+        }
+        final account = await GoogleSignIn(
+          scopes: ['email'],
+          serverClientId: googleWebClientId,
+        ).signIn();
         if (account == null) return; // Seletor de conta cancelado.
         final tokens = await account.authentication;
         final credential = GoogleAuthProvider.credential(

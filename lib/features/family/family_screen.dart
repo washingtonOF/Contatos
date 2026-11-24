@@ -12,6 +12,7 @@ import 'family_location_panel.dart';
 import 'family_presence.dart';
 import 'family_profile_editor.dart';
 import 'family_requests.dart';
+import 'family_safety_hub.dart';
 import 'family_status_screen.dart';
 import 'group_screen.dart';
 import 'invite_code.dart';
@@ -495,6 +496,22 @@ class _FamilyScreenState extends State<FamilyScreen> {
   Widget _family(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.shield_outlined),
+              title: const Text('Proteção familiar'),
+              subtitle: const Text('Localização, uso do aparelho e privacidade'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FamilySafetyHub(
+                    isResponsible: widget.profile['supervisor'] == true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           FamilyRequests(user: widget.user, profile: widget.profile),
           const SizedBox(height: 12),
           _invites(context),

@@ -4,6 +4,20 @@ IsaMig Mensagens é um protótipo Flutter de comunicação familiar.
 
 A versão Web oferece cadastro e login por e-mail. No Android, o fluxo familiar usa login com e-mail verificado e senha, convite de uso único, busca por número entre familiares vinculados e conversas individuais e grupos com aprovação de entrada.
 
+## Login com Google (branch de desenvolvimento)
+
+A tela de autenticação oferece **Continuar com Google** além de e-mail/senha. No Android, o seletor do Google permite usar uma conta disponível no aparelho; na Web, o Firebase abre a autenticação do provedor Google.
+
+Antes de testar:
+
+1. No Firebase Console do projeto `contatos-6c266`, abra **Authentication > Sign-in method** e habilite o provedor Google, definindo o e-mail de suporte.
+2. Em **Project settings > Your apps**, confirme o aplicativo Android `com.washingtonof.conecta_messenger` e cadastre os fingerprints **SHA-1 e SHA-256** do certificado que assina o APK de teste. Se a assinatura mudar entre builds, os fingerprints também precisam ser atualizados.
+3. Confira a configuração OAuth do Android e a autorização de domínio na Web. Mantenha as variáveis `CONECTA_ANDROID_API_KEY` e `CONECTA_ANDROID_APP_ID` já usadas pelo projeto.
+4. Execute `flutter pub get`, `flutter analyze` e os testes Flutter. Instale o APK em um Android e teste login, cancelamento do seletor, conta já existente e retorno à sessão.
+5. Teste com uma conta de responsável e outra de dependente. **Selecionar um perfil não concede permissões de supervisão:** essas permissões exigem regras e validação de vínculo no backend, ainda pendentes nesta branch.
+
+**Status:** integração de código inicial; não foi verificada em um dispositivo nem implantada no Firebase. Não publique um APK como versão de produção antes de completar a auditoria e os testes.
+
 ## Configurar e testar no Android
 
 1. Instale o SDK do Android e o Flutter. Execute `flutter doctor`.

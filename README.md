@@ -122,3 +122,14 @@ Os novos compartilhamentos do painel e os status incluem `expiresAt`. A configur
 O arquivo `storage-status-lifecycle.json` define a exclusão dos objetos sob `statuses/` após dois dias. Antes de aplicá-lo, confira a política de ciclo de vida atual do bucket e combine as regras existentes com esta regra. A atualização de ciclo de vida substitui a configuração anterior e pode alcançar objetos antigos de status. A política de exclusão reversível do bucket pode manter cópias recuperáveis por um período adicional. O prefixo `attachments/` fica fora dessa regra.
 
 Para conferir os registros antigos, use `python3 scripts/migrar-expiracao.py --project ID_DO_PROJETO` com uma conta administrativa autenticada pelo Google Cloud CLI. O comando mostra contagens por coleção. Depois de validar no projeto de teste, o modo `--apply` grava o prazo calculado a partir da data original. Com o TTL ativo, registros cujo prazo já passou ficam elegíveis para exclusão. O script preserva datas de expiração existentes e ignora alterações concorrentes, que podem ser reavaliadas em outra execução.
+
+### Compilação isolada do login Google (IsaMig Família)
+
+A branch `feat/isamig-familia-google-login` contém um workflow manual em `.github/workflows/isamig-familia-google-login.yml`.
+
+Configurações necessárias em **Settings > Secrets and variables > Actions**:
+- **Secret** `CONECTA_DEBUG_KEYSTORE_BASE64`: conteúdo Base64 do certificado Android de teste persistente (nunca commitar ou divulgar).
+- **Variables** `CONECTA_ANDROID_API_KEY`, `CONECTA_ANDROID_APP_ID`: configuração do app Firebase Android.
+- **Variable** `GOOGLE_WEB_CLIENT_ID`: ID de cliente OAuth **Web application** associado ao projeto Firebase/Google Cloud, usado como `serverClientId` no Android. Não é o App ID do Firebase.
+
+Após adicionar o certificado ao secret, cadastre seu SHA-1 e SHA-256 no app Android do Firebase. Execute o workflow manualmente na branch de desenvolvimento. O job falha sem os valores necessários em vez de gerar APK com assinatura diferente. O certificado fornecido é **somente para testes**; para distribuição na Play Store, configure uma chave de release separada.

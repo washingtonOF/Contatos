@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../admin/master_dashboard.dart';
 import '../family/family_header.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +44,56 @@ class _AuthScreenState extends State<AuthScreen> {
   void _changeMode(AuthMode next) {
     _formKey.currentState?.reset();
     setState(() => _mode = next);
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final auth = FirebaseAuth.instance;
+      if (kIsWeb) {
+        await auth.signInWithPopup(GoogleAuthProvider());
+      } else {
+        final account = await GoogleSignIn(scopes: ['email']).signIn();
+        if (account == null) return; // Seletor de conta cancelado.
+        final tokens = await account.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+        );
+        await auth.signInWithCredential(credential);
+      }
+      final user = auth.currentUser;
+      if (user == null) throw StateError('Conta Google não autenticada.');
+      await user.getIdToken(true);
+      if (!mounted) return;
+      if (!user.emailVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Confirme seu e-mail para continuar.')),
+        );
+        return;
+      }
+      if (!widget.family) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const _SignedInScreen()),
+        );
+      }
+      // No modo família, FamilyAccess observa a sessão e abre o perfil.
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      final message = error.code == 'account-exists-with-different-credential'
+          ? 'Já existe uma conta com este e-mail. Entre pelo método anterior para vincular o Google.'
+          : 'Não foi possível entrar com Google. Confira a configuração do Firebase.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível conectar ao Google. Tente novamente.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -246,6 +298,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                     : 'Entrar'),
                       ),
                     ),
+                    if (!reset) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _loading ? null : _signInWithGoogle,
+                        icon: const Icon(Icons.account_circle_outlined),
+                        label: const Text('Continuar com Google'),
+                      ),
+                    ],
                     if (!reset && !signUp)
                       TextButton(
                           onPressed: _loading

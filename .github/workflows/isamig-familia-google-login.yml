@@ -42,6 +42,7 @@ jobs:
         env:
           FIREBASE_API_KEY: ${{ vars.CONECTA_ANDROID_API_KEY }}
           FIREBASE_APP_ID: ${{ vars.CONECTA_ANDROID_APP_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
           flutter build apk --debug \
             --dart-define=CONECTA_ANDROID_API_KEY="$FIREBASE_API_KEY" \
